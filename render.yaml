@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: bbl-tvbox-manager-v2
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ADMIN_KEY
+        generateValue: true
+      - key: ACTIVATION_KEY
+        value: BBL-2026
+      - key: DATABASE_URL
+        sync: false
