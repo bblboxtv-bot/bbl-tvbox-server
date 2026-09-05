@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bbl-tvbox-manager-v2
+    name: bbl-tvbox-manager-v3
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
