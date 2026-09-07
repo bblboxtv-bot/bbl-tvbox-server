@@ -1,14 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <queries>
+        <package android:name="com.rtxapps.reuse" />
+    </queries>
     <application
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
-        android:label="BBL Revenda"
+        android:label="Tudo Liberado Acesso"
         android:icon="@drawable/ic_bbl_revenda"
         android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"
-            android:screenOrientation="unspecified"
+            android:screenOrientation="landscape"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
