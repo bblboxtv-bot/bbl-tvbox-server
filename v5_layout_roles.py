@@ -1,7 +1,8 @@
 import json
 from fastapi import Form, HTTPException
 from fastapi.responses import HTMLResponse
-from v5 import app, db, rows, one, ex, adm, page, go, now
+from v5_assets import app
+from v5 import db, rows, one, ex, adm, page, go, now
 
 # Remove the original layout routes so these improved versions take precedence.
 def _remove_route(path, methods):
