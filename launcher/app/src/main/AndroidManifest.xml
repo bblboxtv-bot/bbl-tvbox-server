@@ -7,7 +7,7 @@
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
     </queries>
     <application android:theme="@style/Theme.BBL" android:label="BBL.BOXTV" android:icon="@drawable/ic_bbl" android:banner="@drawable/tv_banner" android:usesCleartextTraffic="true">
-        <activity android:name=".MainActivity" android:screenOrientation="landscape" android:exported="true">
+        <activity android:name=".V21Activity" android:screenOrientation="landscape" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LEANBACK_LAUNCHER" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
         </activity>
