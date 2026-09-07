@@ -4,6 +4,7 @@ from v5_base_compat import app
 import v5_reseller_portal as portal
 import v5_base2_gate
 import v5
+import v5_tudo_liberado_integration
 
 
 def _seed_reseller_admin():
