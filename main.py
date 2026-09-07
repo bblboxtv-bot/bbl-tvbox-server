@@ -1,2 +1,1 @@
-from v5 import app
-import v5_assets
+from v5_assets import app
