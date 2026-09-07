@@ -2,7 +2,9 @@ package com.bbl.boxtv.revenda;
 
 import android.app.Activity;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -28,7 +30,10 @@ import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
     private static final String LOGIN_URL = "https://bbl-tvbox-manager-v2.onrender.com/base2/api/login";
+    private static final String CHECK_URL = "https://bbl-tvbox-manager-v2.onrender.com/base2/api/check";
     private static final String MOTOR_PACKAGE = "com.rtxapps.reuse";
+    private static final String PREFS = "tudo_liberado_auth";
+    private static final String PREF_TOKEN = "token";
     private static final String[] MOTOR_ACTIVITIES = new String[] {
         "top.niunaijun.blackboxa.view.main.LauncherActivity",
         "top.niunaijun.blackbox.app.LauncherActivity"
@@ -39,11 +44,17 @@ public class MainActivity extends Activity {
     private Button enterButton;
     private ProgressBar progress;
     private TextView status;
+    private SharedPreferences prefs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         buildUi();
+        String savedToken = prefs.getString(PREF_TOKEN, "");
+        if (savedToken != null && !savedToken.trim().isEmpty()) {
+            checkSavedLogin(savedToken.trim());
+        }
     }
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -139,6 +150,58 @@ public class MainActivity extends Activity {
         return id.trim();
     }
 
+    private void checkSavedLogin(final String token) {
+        setBusy(true, "Validando acesso salvo...");
+        new Thread(() -> {
+            int code = -1;
+            String body = "";
+            try {
+                URL url = new URL(CHECK_URL);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(12000);
+                conn.setReadTimeout(12000);
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setDoOutput(true);
+                JSONObject json = new JSONObject();
+                json.put("token", token);
+                json.put("device_id", deviceId());
+                byte[] out = json.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream os = conn.getOutputStream()) { os.write(out); }
+                code = conn.getResponseCode();
+                InputStream in = code >= 200 && code < 400 ? conn.getInputStream() : conn.getErrorStream();
+                if (in != null) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    body = sb.toString();
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                runOnUiThread(() -> setBusy(false, "Sem conexão. Digite usuário e senha para tentar novamente."));
+                return;
+            }
+            final int finalCode = code;
+            final String finalBody = body;
+            runOnUiThread(() -> {
+                if (finalCode >= 200 && finalCode < 300) {
+                    setBusy(false, "Acesso salvo liberado.");
+                    openTudoLiberado();
+                } else {
+                    prefs.edit().remove(PREF_TOKEN).apply();
+                    String msg = "Sessão expirada. Entre novamente.";
+                    try {
+                        String err = new JSONObject(finalBody).optString("error", "");
+                        if ("expired".equals(err)) msg = "Acesso vencido. Fale com sua revenda.";
+                    } catch (Exception ignored) {}
+                    setBusy(false, msg);
+                }
+            });
+        }).start();
+    }
+
     private void login() {
         final String username = userField.getText().toString().trim();
         final String password = passField.getText().toString();
@@ -183,6 +246,10 @@ public class MainActivity extends Activity {
             final String finalBody = body;
             runOnUiThread(() -> {
                 if (finalCode >= 200 && finalCode < 300) {
+                    try {
+                        String token = new JSONObject(finalBody).optString("token", "").trim();
+                        if (!token.isEmpty()) prefs.edit().putString(PREF_TOKEN, token).apply();
+                    } catch (Exception ignored) {}
                     setBusy(false, "Acesso liberado.");
                     openTudoLiberado();
                 } else {
@@ -191,7 +258,7 @@ public class MainActivity extends Activity {
                         String err = new JSONObject(finalBody).optString("error", "");
                         if ("blocked".equals(err)) msg = "Acesso bloqueado no painel.";
                         else if ("expired".equals(err)) msg = "Acesso vencido. Fale com sua revenda.";
-                        else if ("device_mismatch".equals(err)) msg = "Este usuário já está vinculado a outro aparelho.";
+                        else if ("device_in_use".equals(err)) msg = "Este usuário já está vinculado a outro aparelho.";
                     } catch (Exception ignored) {}
                     setBusy(false, msg);
                 }
