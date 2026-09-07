@@ -22,8 +22,8 @@ jobs:
         working-directory: launcher
         run: gradle :app:assembleDebug --stacktrace
       - name: Rename APK
-        run: cp launcher/app/build/outputs/apk/debug/app-debug.apk BBL_BOXTV_Launcher_V2.1.0.apk
+        run: cp launcher/app/build/outputs/apk/debug/app-debug.apk BBL_BOXTV_Launcher_V2.1.1.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: BBL_BOXTV_Launcher_V2.1.0
-          path: BBL_BOXTV_Launcher_V2.1.0.apk
+          name: BBL_BOXTV_Launcher_V2.1.1
+          path: BBL_BOXTV_Launcher_V2.1.1.apk
