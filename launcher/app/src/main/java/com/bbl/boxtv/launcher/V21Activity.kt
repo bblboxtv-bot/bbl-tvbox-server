@@ -167,21 +167,38 @@ class V21Activity : Activity() {
             AlertDialog.Builder(this).setTitle(cfg.brandingName).setMessage(cfg.message).setPositiveButton("OK", null).show()
         }
 
+        val primaryApps = cfg.apps.take(3)
+        val secondaryApps = cfg.apps.drop(3).take(5)
+
         val hero = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        hero.addView(bannerView(cfg.banners.firstOrNull(), cfg.brandingName), LinearLayout.LayoutParams(0, 330, 1.55f).apply { rightMargin = 12 })
+        hero.addView(bannerView(cfg.banners.firstOrNull(), cfg.brandingName), LinearLayout.LayoutParams(0, 330, 1.45f).apply { rightMargin = 12 })
 
         val featured = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        cfg.apps.take(2).forEach { featured.addView(appCard(it, true), LinearLayout.LayoutParams(0, 330, 1f).apply { setMargins(6,0,6,0) }) }
-        if (cfg.apps.isEmpty()) featured.addView(TextView(this).apply { text="Sem aplicativos"; textSize=22f; setTextColor(Color.WHITE); gravity=Gravity.CENTER }, LinearLayout.LayoutParams(-1,-1))
-        hero.addView(featured, LinearLayout.LayoutParams(0, 330, 1f))
+        primaryApps.forEach { featured.addView(appCard(it, true), LinearLayout.LayoutParams(0, 330, 1f).apply { setMargins(5,0,5,0) }) }
+        if (primaryApps.isEmpty()) featured.addView(TextView(this).apply { text="Sem aplicativos principais"; textSize=21f; setTextColor(Color.WHITE); gravity=Gravity.CENTER }, LinearLayout.LayoutParams(-1,-1))
+        hero.addView(featured, LinearLayout.LayoutParams(0, 330, 1.25f))
         root.addView(hero, LinearLayout.LayoutParams(-1, 330).apply { bottomMargin = 10 })
 
+        val secondaryArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        if (secondaryApps.isNotEmpty()) {
+            secondaryArea.addView(TextView(this).apply {
+                text = "APLICATIVOS"
+                textSize = 14f
+                setTextColor(Color.LTGRAY)
+                setPadding(4, 0, 0, 4)
+            })
+        }
         val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true }
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        cfg.apps.forEach { row.addView(appCard(it, false), LinearLayout.LayoutParams(245, 180).apply { setMargins(6,2,6,2) }) }
+        secondaryApps.forEach { row.addView(appCard(it, false), LinearLayout.LayoutParams(245, 180).apply { setMargins(6,2,6,2) }) }
         scroll.addView(row)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        if (row.childCount > 0) row.getChildAt(0).requestFocus()
+        secondaryArea.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(secondaryArea, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        when {
+            row.childCount > 0 -> row.getChildAt(0).requestFocus()
+            featured.childCount > 0 -> featured.getChildAt(0).requestFocus()
+        }
         maybeAutoInstall(cfg.apps)
     }
 
@@ -219,9 +236,9 @@ class V21Activity : Activity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             try { setImageDrawable(packageManager.getApplicationIcon(app.packageName)) } catch (_: Exception) { setImageResource(R.drawable.ic_bbl) }
         }
-        val size = if (featured) 185 else 100
-        card.addView(icon, FrameLayout.LayoutParams(size,size,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = if(featured) 34 else 16 })
-        card.addView(TextView(this).apply { text=caption; textSize=if(featured)22f else 18f; setTextColor(Color.WHITE); gravity=Gravity.CENTER; maxLines=2 }, FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply { setMargins(6,0,6,8) })
+        val size = if (featured) 175 else 100
+        card.addView(icon, FrameLayout.LayoutParams(size,size,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = if(featured) 38 else 16 })
+        card.addView(TextView(this).apply { text=caption; textSize=if(featured)20f else 18f; setTextColor(Color.WHITE); gravity=Gravity.CENTER; maxLines=2 }, FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply { setMargins(6,0,6,8) })
         return card
     }
 
