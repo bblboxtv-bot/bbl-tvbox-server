@@ -29,7 +29,10 @@ import java.nio.charset.StandardCharsets;
 public class MainActivity extends Activity {
     private static final String LOGIN_URL = "https://bbl-tvbox-manager-v2.onrender.com/base2/api/login";
     private static final String MOTOR_PACKAGE = "com.rtxapps.reuse";
-    private static final String MOTOR_ACTIVITY = "top.niunaijun.blackbox.app.LauncherActivity";
+    private static final String[] MOTOR_ACTIVITIES = new String[] {
+        "top.niunaijun.blackboxa.view.main.LauncherActivity",
+        "top.niunaijun.blackbox.app.LauncherActivity"
+    };
 
     private EditText userField;
     private EditText passField;
@@ -43,9 +46,7 @@ public class MainActivity extends Activity {
         buildUi();
     }
 
-    private int dp(int v) {
-        return Math.round(v * getResources().getDisplayMetrics().density);
-    }
+    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
     private TextView text(String value, float size, int color) {
         TextView t = new TextView(this);
@@ -65,18 +66,17 @@ public class MainActivity extends Activity {
 
         TextView logo = text("TUDO LIBERADO", 32f, Color.WHITE);
         logo.setTypeface(logo.getTypeface(), 1);
-        root.addView(logo, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(logo, new LinearLayout.LayoutParams(-1, -2));
 
         TextView subtitle = text("ACESSO CONTROLADO", 17f, Color.rgb(93, 188, 255));
         subtitle.setPadding(0, dp(4), 0, dp(26));
-        root.addView(subtitle, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(subtitle, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(28), dp(24), dp(28), dp(24));
         card.setBackgroundColor(Color.rgb(14, 35, 58));
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(dp(520), LinearLayout.LayoutParams.WRAP_CONTENT);
-        root.addView(card, cp);
+        root.addView(card, new LinearLayout.LayoutParams(dp(520), -2));
 
         TextView title = text("Entre com seu usuário e senha", 18f, Color.WHITE);
         title.setGravity(Gravity.START);
@@ -90,7 +90,7 @@ public class MainActivity extends Activity {
         userField.setHintTextColor(Color.rgb(150, 170, 190));
         userField.setBackgroundColor(Color.rgb(7, 24, 42));
         userField.setPadding(dp(16), dp(12), dp(16), dp(12));
-        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58));
+        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-1, dp(58));
         fp.setMargins(0, dp(6), 0, dp(10));
         card.addView(userField, fp);
 
@@ -102,7 +102,7 @@ public class MainActivity extends Activity {
         passField.setHintTextColor(Color.rgb(150, 170, 190));
         passField.setBackgroundColor(Color.rgb(7, 24, 42));
         passField.setPadding(dp(16), dp(12), dp(16), dp(12));
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58));
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1, dp(58));
         pp.setMargins(0, 0, 0, dp(14));
         card.addView(passField, pp);
 
@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
         enterButton.setTextSize(17f);
         enterButton.setFocusable(true);
         enterButton.setOnClickListener(v -> login());
-        card.addView(enterButton, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)));
+        card.addView(enterButton, new LinearLayout.LayoutParams(-1, dp(58)));
 
         progress = new ProgressBar(this);
         progress.setVisibility(View.GONE);
@@ -122,11 +122,11 @@ public class MainActivity extends Activity {
 
         status = text("", 15f, Color.LTGRAY);
         status.setPadding(0, dp(10), 0, 0);
-        card.addView(status, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        card.addView(status, new LinearLayout.LayoutParams(-1, -2));
 
         TextView footer = text("Acesso controlado remotamente pelo painel de revenda.", 14f, Color.rgb(150, 170, 190));
         footer.setPadding(0, dp(24), 0, 0);
-        root.addView(footer, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(footer, new LinearLayout.LayoutParams(-1, -2));
 
         setContentView(root);
         userField.requestFocus();
@@ -159,12 +159,10 @@ public class MainActivity extends Activity {
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                 conn.setRequestProperty("Accept", "application/json");
                 conn.setDoOutput(true);
-
                 JSONObject json = new JSONObject();
                 json.put("username", username);
                 json.put("password", password);
                 json.put("device_id", deviceId());
-
                 byte[] out = json.toString().getBytes(StandardCharsets.UTF_8);
                 try (OutputStream os = conn.getOutputStream()) { os.write(out); }
                 code = conn.getResponseCode();
@@ -178,11 +176,9 @@ public class MainActivity extends Activity {
                 }
                 conn.disconnect();
             } catch (Exception e) {
-                final String msg = "Falha de conexão. Verifique a internet e tente novamente.";
-                runOnUiThread(() -> setBusy(false, msg));
+                runOnUiThread(() -> setBusy(false, "Falha de conexão. Verifique a internet e tente novamente."));
                 return;
             }
-
             final int finalCode = code;
             final String finalBody = body;
             runOnUiThread(() -> {
@@ -212,14 +208,21 @@ public class MainActivity extends Activity {
     }
 
     private void openTudoLiberado() {
-        try {
-            Intent launch = new Intent(Intent.ACTION_MAIN);
-            launch.setComponent(new ComponentName(MOTOR_PACKAGE, MOTOR_ACTIVITY));
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-            startActivity(launch);
-        } catch (Exception e) {
-            status.setText("Componente do TUDO LIBERADO não está instalado.");
-            Toast.makeText(this, "Instale o pacote completo e tente novamente.", Toast.LENGTH_LONG).show();
+        Exception last = null;
+        for (String activity : MOTOR_ACTIVITIES) {
+            try {
+                Intent launch = new Intent(Intent.ACTION_MAIN);
+                launch.setComponent(new ComponentName(MOTOR_PACKAGE, activity));
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                startActivity(launch);
+                status.setText("Abrindo TUDO LIBERADO...");
+                return;
+            } catch (Exception e) {
+                last = e;
+            }
         }
+        String detail = last == null ? "atividade não encontrada" : last.getClass().getSimpleName();
+        status.setText("Motor instalado, mas não foi possível abrir (" + detail + ").");
+        Toast.makeText(this, "Falha ao abrir o componente interno do TUDO LIBERADO.", Toast.LENGTH_LONG).show();
     }
 }
