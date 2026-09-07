@@ -1,156 +1,222 @@
 package com.bbl.boxtv.revenda;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.webkit.CookieManager;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.Button;
-import android.widget.FrameLayout;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
-    private static final String START_URL = "https://bbl-tvbox-manager-v2.onrender.com/revenda/login";
-    private static final String ALLOWED_HOST = "bbl-tvbox-manager-v2.onrender.com";
-    private WebView webView;
+    private static final String LOGIN_URL = "https://bbl-tvbox-manager-v2.onrender.com/base2/api/login";
+    private static final String BASE2_PACKAGE = "com.rtxapps.reuse";
+
+    private EditText userField;
+    private EditText passField;
+    private Button enterButton;
     private ProgressBar progress;
-    private LinearLayout errorBox;
+    private TextView status;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         buildUi();
-        configureWebView();
-        webView.loadUrl(START_URL);
+    }
+
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
+    private TextView text(String value, float size, int color) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        t.setGravity(Gravity.CENTER);
+        return t;
     }
 
     private void buildUi() {
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(8, 21, 38));
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setPadding(dp(40), dp(30), dp(40), dp(30));
+        root.setBackgroundColor(Color.rgb(5, 12, 22));
 
-        webView = new WebView(this);
-        root.addView(webView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        TextView logo = text("TUDO LIBERADO", 32f, Color.WHITE);
+        logo.setTypeface(logo.getTypeface(), 1);
+        root.addView(logo, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progress.setMax(100);
-        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 8, Gravity.TOP);
-        root.addView(progress, pp);
+        TextView subtitle = text("ACESSO BASE 2", 17f, Color.rgb(93, 188, 255));
+        subtitle.setPadding(0, dp(4), 0, dp(26));
+        root.addView(subtitle, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        errorBox = new LinearLayout(this);
-        errorBox.setOrientation(LinearLayout.VERTICAL);
-        errorBox.setGravity(Gravity.CENTER);
-        errorBox.setPadding(48, 48, 48, 48);
-        errorBox.setBackgroundColor(Color.rgb(8, 21, 38));
-        errorBox.setVisibility(View.GONE);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(28), dp(24), dp(28), dp(24));
+        card.setBackgroundColor(Color.rgb(14, 35, 58));
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(dp(520), LinearLayout.LayoutParams.WRAP_CONTENT);
+        root.addView(card, cp);
 
-        TextView title = new TextView(this);
-        title.setText("BBL.BOXTV");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(30f);
-        title.setGravity(Gravity.CENTER);
-        title.setTypeface(title.getTypeface(), 1);
-        errorBox.addView(title);
+        TextView title = text("Entre com o usuário e senha do seu acesso", 18f, Color.WHITE);
+        title.setGravity(Gravity.START);
+        title.setPadding(0, 0, 0, dp(14));
+        card.addView(title);
 
-        TextView msg = new TextView(this);
-        msg.setText("Não foi possível conectar ao painel de revenda.\nVerifique a internet e tente novamente.");
-        msg.setTextColor(Color.LTGRAY);
-        msg.setTextSize(18f);
-        msg.setGravity(Gravity.CENTER);
-        msg.setPadding(0, 20, 0, 20);
-        errorBox.addView(msg);
+        userField = new EditText(this);
+        userField.setHint("Usuário");
+        userField.setSingleLine(true);
+        userField.setTextColor(Color.WHITE);
+        userField.setHintTextColor(Color.rgb(150, 170, 190));
+        userField.setBackgroundColor(Color.rgb(7, 24, 42));
+        userField.setPadding(dp(16), dp(12), dp(16), dp(12));
+        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58));
+        fp.setMargins(0, dp(6), 0, dp(10));
+        card.addView(userField, fp);
 
-        Button retry = new Button(this);
-        retry.setText("TENTAR NOVAMENTE");
-        retry.setOnClickListener(v -> {
-            errorBox.setVisibility(View.GONE);
-            webView.setVisibility(View.VISIBLE);
-            webView.loadUrl(START_URL);
-        });
-        errorBox.addView(retry, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        passField = new EditText(this);
+        passField.setHint("Senha");
+        passField.setSingleLine(true);
+        passField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        passField.setTextColor(Color.WHITE);
+        passField.setHintTextColor(Color.rgb(150, 170, 190));
+        passField.setBackgroundColor(Color.rgb(7, 24, 42));
+        passField.setPadding(dp(16), dp(12), dp(16), dp(12));
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58));
+        pp.setMargins(0, 0, 0, dp(14));
+        card.addView(passField, pp);
 
-        root.addView(errorBox, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        enterButton = new Button(this);
+        enterButton.setText("ENTRAR E ABRIR BASE 2");
+        enterButton.setTextSize(17f);
+        enterButton.setFocusable(true);
+        enterButton.setOnClickListener(v -> login());
+        card.addView(enterButton, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)));
+
+        progress = new ProgressBar(this);
+        progress.setVisibility(View.GONE);
+        LinearLayout.LayoutParams prog = new LinearLayout.LayoutParams(dp(42), dp(42));
+        prog.gravity = Gravity.CENTER_HORIZONTAL;
+        prog.setMargins(0, dp(14), 0, 0);
+        card.addView(progress, prog);
+
+        status = text("", 15f, Color.LTGRAY);
+        status.setPadding(0, dp(10), 0, 0);
+        card.addView(status, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView footer = text("O acesso é controlado remotamente pelo Painel Base 2.", 14f, Color.rgb(150, 170, 190));
+        footer.setPadding(0, dp(24), 0, 0);
+        root.addView(footer, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         setContentView(root);
+        userField.requestFocus();
     }
 
-    private void configureWebView() {
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
-
-        WebSettings s = webView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setLoadWithOverviewMode(true);
-        s.setUseWideViewPort(true);
-        s.setBuiltInZoomControls(false);
-        s.setDisplayZoomControls(false);
-        s.setAllowFileAccess(false);
-        s.setAllowContentAccess(false);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        s.setUserAgentString(s.getUserAgentString() + " BBLRevenda/1.0.0");
-
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onProgressChanged(WebView view, int newProgress) {
-                progress.setProgress(newProgress);
-                progress.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
-            }
-        });
-
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
-                if ("https".equalsIgnoreCase(uri.getScheme()) && ALLOWED_HOST.equalsIgnoreCase(uri.getHost())) {
-                    return false;
-                }
-                return true;
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-                errorBox.setVisibility(View.GONE);
-                webView.setVisibility(View.VISIBLE);
-                CookieManager.getInstance().flush();
-            }
-
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                super.onReceivedError(view, request, error);
-                if (request.isForMainFrame()) {
-                    webView.setVisibility(View.GONE);
-                    errorBox.setVisibility(View.VISIBLE);
-                }
-            }
-        });
+    private String deviceId() {
+        String id = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        if (id == null || id.trim().isEmpty()) id = android.os.Build.SERIAL;
+        if (id == null || id.trim().isEmpty()) id = "unknown-device";
+        return id.trim();
     }
 
-    @Override
-    public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
+    private void login() {
+        final String username = userField.getText().toString().trim();
+        final String password = passField.getText().toString();
+        if (username.isEmpty() || password.isEmpty()) {
+            status.setText("Digite usuário e senha.");
+            return;
         }
+        setBusy(true, "Verificando acesso...");
+        new Thread(() -> {
+            int code = -1;
+            String body = "";
+            try {
+                URL url = new URL(LOGIN_URL);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(12000);
+                conn.setReadTimeout(12000);
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setDoOutput(true);
+
+                JSONObject json = new JSONObject();
+                json.put("username", username);
+                json.put("password", password);
+                json.put("device_id", deviceId());
+
+                byte[] out = json.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream os = conn.getOutputStream()) { os.write(out); }
+                code = conn.getResponseCode();
+                InputStream in = code >= 200 && code < 400 ? conn.getInputStream() : conn.getErrorStream();
+                if (in != null) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    body = sb.toString();
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                final String msg = "Falha de conexão. Verifique a internet e tente novamente.";
+                runOnUiThread(() -> setBusy(false, msg));
+                return;
+            }
+
+            final int finalCode = code;
+            final String finalBody = body;
+            runOnUiThread(() -> {
+                if (finalCode >= 200 && finalCode < 300) {
+                    setBusy(false, "Acesso liberado.");
+                    openBase2();
+                } else {
+                    String msg = "Usuário ou senha inválidos.";
+                    try {
+                        String err = new JSONObject(finalBody).optString("error", "");
+                        if ("blocked".equals(err)) msg = "Acesso bloqueado no painel.";
+                        else if ("expired".equals(err)) msg = "Acesso vencido. Fale com sua revenda.";
+                        else if ("device_mismatch".equals(err)) msg = "Este usuário já está vinculado a outro aparelho.";
+                    } catch (Exception ignored) {}
+                    setBusy(false, msg);
+                }
+            });
+        }).start();
     }
 
-    @Override
-    protected void onDestroy() {
-        if (webView != null) {
-            webView.stopLoading();
-            webView.destroy();
+    private void setBusy(boolean busy, String message) {
+        enterButton.setEnabled(!busy);
+        userField.setEnabled(!busy);
+        passField.setEnabled(!busy);
+        progress.setVisibility(busy ? View.VISIBLE : View.GONE);
+        status.setText(message);
+    }
+
+    private void openBase2() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(BASE2_PACKAGE);
+        if (launch == null) {
+            status.setText("Base 2 não está instalado nesta TV Box.");
+            Toast.makeText(this, "Instale o Base 2 e tente novamente.", Toast.LENGTH_LONG).show();
+            return;
         }
-        super.onDestroy();
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        startActivity(launch);
     }
 }
