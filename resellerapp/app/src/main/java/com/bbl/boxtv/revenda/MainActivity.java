@@ -1,6 +1,7 @@
 package com.bbl.boxtv.revenda;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -27,7 +28,8 @@ import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
     private static final String LOGIN_URL = "https://bbl-tvbox-manager-v2.onrender.com/base2/api/login";
-    private static final String BASE2_PACKAGE = "com.rtxapps.reuse";
+    private static final String MOTOR_PACKAGE = "com.rtxapps.reuse";
+    private static final String MOTOR_ACTIVITY = "top.niunaijun.blackbox.app.LauncherActivity";
 
     private EditText userField;
     private EditText passField;
@@ -65,7 +67,7 @@ public class MainActivity extends Activity {
         logo.setTypeface(logo.getTypeface(), 1);
         root.addView(logo, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView subtitle = text("ACESSO BASE 2", 17f, Color.rgb(93, 188, 255));
+        TextView subtitle = text("ACESSO CONTROLADO", 17f, Color.rgb(93, 188, 255));
         subtitle.setPadding(0, dp(4), 0, dp(26));
         root.addView(subtitle, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -76,7 +78,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(dp(520), LinearLayout.LayoutParams.WRAP_CONTENT);
         root.addView(card, cp);
 
-        TextView title = text("Entre com o usuário e senha do seu acesso", 18f, Color.WHITE);
+        TextView title = text("Entre com seu usuário e senha", 18f, Color.WHITE);
         title.setGravity(Gravity.START);
         title.setPadding(0, 0, 0, dp(14));
         card.addView(title);
@@ -105,7 +107,7 @@ public class MainActivity extends Activity {
         card.addView(passField, pp);
 
         enterButton = new Button(this);
-        enterButton.setText("ENTRAR E ABRIR BASE 2");
+        enterButton.setText("ENTRAR");
         enterButton.setTextSize(17f);
         enterButton.setFocusable(true);
         enterButton.setOnClickListener(v -> login());
@@ -122,7 +124,7 @@ public class MainActivity extends Activity {
         status.setPadding(0, dp(10), 0, 0);
         card.addView(status, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView footer = text("O acesso é controlado remotamente pelo Painel Base 2.", 14f, Color.rgb(150, 170, 190));
+        TextView footer = text("Acesso controlado remotamente pelo painel de revenda.", 14f, Color.rgb(150, 170, 190));
         footer.setPadding(0, dp(24), 0, 0);
         root.addView(footer, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -186,7 +188,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (finalCode >= 200 && finalCode < 300) {
                     setBusy(false, "Acesso liberado.");
-                    openBase2();
+                    openTudoLiberado();
                 } else {
                     String msg = "Usuário ou senha inválidos.";
                     try {
@@ -209,14 +211,15 @@ public class MainActivity extends Activity {
         status.setText(message);
     }
 
-    private void openBase2() {
-        Intent launch = getPackageManager().getLaunchIntentForPackage(BASE2_PACKAGE);
-        if (launch == null) {
-            status.setText("Base 2 não está instalado nesta TV Box.");
-            Toast.makeText(this, "Instale o Base 2 e tente novamente.", Toast.LENGTH_LONG).show();
-            return;
+    private void openTudoLiberado() {
+        try {
+            Intent launch = new Intent(Intent.ACTION_MAIN);
+            launch.setComponent(new ComponentName(MOTOR_PACKAGE, MOTOR_ACTIVITY));
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            startActivity(launch);
+        } catch (Exception e) {
+            status.setText("Componente do TUDO LIBERADO não está instalado.");
+            Toast.makeText(this, "Instale o pacote completo e tente novamente.", Toast.LENGTH_LONG).show();
         }
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-        startActivity(launch);
     }
 }
