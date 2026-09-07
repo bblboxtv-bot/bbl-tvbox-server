@@ -1,4 +1,4 @@
-name: Build BBL Revenda APK
+name: Build Tudo Liberado Acesso APK
 on:
   workflow_dispatch:
   push:
@@ -22,8 +22,8 @@ jobs:
         working-directory: resellerapp
         run: gradle :app:assembleDebug --stacktrace
       - name: Rename APK
-        run: cp resellerapp/app/build/outputs/apk/debug/app-debug.apk BBL_REVENDA_V1.0.0.apk
+        run: cp resellerapp/app/build/outputs/apk/debug/app-debug.apk TUDO_LIBERADO_ACESSO_V2.0.0.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: BBL_REVENDA_V1.0.0
-          path: BBL_REVENDA_V1.0.0.apk
+          name: TUDO_LIBERADO_ACESSO_V2.0.0
+          path: TUDO_LIBERADO_ACESSO_V2.0.0.apk
