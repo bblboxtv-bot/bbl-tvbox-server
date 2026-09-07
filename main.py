@@ -1,1 +1,1 @@
-from v5_reseller_portal import app
+from v5_base_compat import app
