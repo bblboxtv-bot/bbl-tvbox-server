@@ -1,1 +1,1 @@
-from v5_layout_roles import app
+from v5_reseller_portal import app
