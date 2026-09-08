@@ -5,6 +5,8 @@ import v5_reseller_portal as portal
 import v5_base2_gate
 import v5_base2_reseller_portal
 import v5_base2_tools
+import v5_base2_apps
+import v5_base2_apps_nav
 import v5
 import v5_tudo_liberado_integration
 
