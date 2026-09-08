@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 import v5
 
 app = v5.app
+BASE_URL = 'https://bbl-tvbox-manager-v2.onrender.com'
 
 
 def _auth_client(c, token: str, device_id: str):
@@ -40,7 +41,8 @@ async def api_apps_list(req: Request):
             a.sha256 AS sha256
         FROM base2_remote_apps q
         JOIN apps a ON a.id=q.app_id
-        WHERE q.client_id=?
+        JOIN base2_app_blobs b ON b.app_id=a.id
+        WHERE q.client_id=? AND b.size_bytes>0
         ORDER BY CASE WHEN q.status='pending' THEN 0 ELSE 1 END, q.created_at DESC
     ''', (auth['client_id'],))
     c.close()
@@ -59,7 +61,7 @@ async def api_apps_list(req: Request):
             'version_name': x.get('version_name') or '',
             'version_code': x.get('version_code') or '',
             'status': x.get('queue_status') or 'pending',
-            'download_url': f"/base2/api/apps/{aid}/download",
+            'download_url': f"{BASE_URL}/base2/api/apps/{aid}/download",
             'sha256': x.get('sha256') or ''
         })
     return {'ok': True, 'apps': out}
