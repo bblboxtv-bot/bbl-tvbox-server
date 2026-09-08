@@ -50,7 +50,7 @@ async def api_apps_list(req: Request):
             'version_name': x.get('version_name') or '',
             'version_code': x.get('version_code') or '',
             'status': x.get('queue_status') or 'pending',
-            'download_url': f"/api/apps/{aid}/download",
+            'download_url': f"/base2/api/apps/{aid}/download",
             'sha256': x.get('sha256') or ''
         })
     return {'ok': True, 'apps': out}
