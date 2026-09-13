@@ -10,6 +10,7 @@ import v5_base2_apps_nav
 import v5_base2_apps_list
 import v5_base2_apk_storage
 import v5_download_compat
+import v5_base2_legacy_panel
 import v5
 import v5_tudo_liberado_integration
 
