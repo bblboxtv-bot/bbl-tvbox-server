@@ -13,10 +13,8 @@ def init_remote_apps():
     c = v5.db()
     blob_type = 'BYTEA' if v5.pg() else 'BLOB'
     v5.ex(c, "CREATE TABLE IF NOT EXISTS base2_remote_apps(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,app_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT NOT NULL,finished_at TEXT,result TEXT NOT NULL DEFAULT '')")
-    try:
-        v5.ex(c, "ALTER TABLE base2_remote_apps ADD COLUMN install_target TEXT NOT NULL DEFAULT 'container'")
-    except Exception:
-        pass
+    c.commit()
+    v5.col(c, "ALTER TABLE base2_remote_apps ADD COLUMN install_target TEXT NOT NULL DEFAULT 'container'")
     v5.ex(c, f"CREATE TABLE IF NOT EXISTS base2_app_blobs(app_id TEXT PRIMARY KEY, data {blob_type} NOT NULL, size_bytes INTEGER NOT NULL DEFAULT 0, sha256 TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)")
     v5.ex(c, "CREATE TABLE IF NOT EXISTS base2_app_files(app_id TEXT PRIMARY KEY,size_bytes INTEGER NOT NULL,sha256 TEXT NOT NULL,chunk_count INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)")
     v5.ex(c, f"CREATE TABLE IF NOT EXISTS base2_app_chunks(app_id TEXT NOT NULL,chunk_index INTEGER NOT NULL,data {blob_type} NOT NULL,PRIMARY KEY(app_id,chunk_index))")
