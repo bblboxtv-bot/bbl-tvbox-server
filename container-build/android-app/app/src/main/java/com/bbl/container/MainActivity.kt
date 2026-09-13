@@ -22,10 +22,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var list: RecyclerView
     private lateinit var login: Button
+    private lateinit var refresh: Button
     private lateinit var user: EditText
     private lateinit var pass: EditText
     @Volatile private var engineReady = false
     @Volatile private var loginRunning = false
+    @Volatile private var currentToken: String? = null
+    @Volatile private var currentDeviceId: String? = null
 
     private val prefs by lazy { getSharedPreferences("base2_login", Context.MODE_PRIVATE) }
 
@@ -36,6 +39,7 @@ class MainActivity : AppCompatActivity() {
         status=findViewById(R.id.status)
         list=findViewById(R.id.list)
         login=findViewById(R.id.login)
+        refresh=findViewById(R.id.refresh)
         user=findViewById(R.id.username)
         pass=findViewById(R.id.password)
         list.layoutManager=LinearLayoutManager(this)
@@ -47,6 +51,16 @@ class MainActivity : AppCompatActivity() {
         if(savedUser.isBlank()) user.requestFocus() else login.requestFocus()
 
         login.setOnClickListener { performLogin(user.text.toString().trim(),pass.text.toString(),false) }
+        refresh.setOnClickListener {
+            val token=currentToken
+            val device=currentDeviceId
+            if(token!=null && device!=null) {
+                status.text="Atualizando lista de aplicativos..."
+                loadCatalog(token,device)
+            } else {
+                performLogin(user.text.toString().trim(),pass.text.toString(),true)
+            }
+        }
 
         thread {
             runCatching { VirtualEngineProvider.create().init(applicationContext); VirtualEngineProvider.create().status() }
@@ -81,13 +95,17 @@ class MainActivity : AppCompatActivity() {
         loginRunning=true
         status.text=if(automatic) "Entrando automaticamente..." else "Conectando ao Base 2..."
         login.isEnabled=false
+        refresh.isEnabled=false
         thread {
             runCatching { api.login(u,p,deviceId()) }
                 .onSuccess { s ->
                     prefs.edit().putString("username",u).putString("password",p).apply()
+                    currentToken=s.token
+                    currentDeviceId=s.deviceId
                     runOnUiThread {
                         loginRunning=false
                         login.isEnabled=true
+                        refresh.isEnabled=true
                         status.text="Login realizado. Buscando aplicativos..."
                         loadCatalog(s.token,s.deviceId)
                     }
@@ -95,6 +113,7 @@ class MainActivity : AppCompatActivity() {
                 .onFailure { e -> runOnUiThread {
                     loginRunning=false
                     login.isEnabled=true
+                    refresh.isEnabled=true
                     status.text=when(e.message){
                         "invalid_credentials" -> "Usuário ou senha inválidos."
                         "blocked" -> "Cliente bloqueado no painel Base 2."
@@ -110,14 +129,19 @@ class MainActivity : AppCompatActivity() {
     private fun deviceId(): String = Settings.Secure.getString(contentResolver,Settings.Secure.ANDROID_ID) ?: android.os.Build.MODEL
 
     private fun loadCatalog(token:String, deviceId:String) {
+        refresh.isEnabled=false
         thread {
             runCatching { api.catalog(token,deviceId) }
                 .onSuccess { apps -> runOnUiThread {
+                    refresh.isEnabled=true
                     status.text=if(apps.isEmpty()) "Nenhum aplicativo liberado para este cliente no painel Base 2." else "Aplicativos liberados: ${apps.size} — use as setas para escolher."
                     list.adapter=AppAdapter(apps) { app -> runApp(token,app) }
                     if(apps.isNotEmpty()) list.post { list.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
                 }}
-                .onFailure { e -> runOnUiThread { status.text=e.message ?: "Falha ao consultar aplicativos" } }
+                .onFailure { e -> runOnUiThread {
+                    refresh.isEnabled=true
+                    status.text=e.message ?: "Falha ao consultar aplicativos"
+                } }
         }
     }
 
