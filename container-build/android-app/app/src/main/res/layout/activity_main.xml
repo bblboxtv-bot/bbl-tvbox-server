@@ -5,7 +5,7 @@
     <TextView android:id="@+id/title" android:text="BBL CONTAINER — BASE 2" android:textColor="#F5C451"
         android:textSize="30sp" android:textStyle="bold" android:layout_width="wrap_content" android:layout_height="wrap_content" />
 
-    <TextView android:text="Use as setas do controle para escolher USUÁRIO, SENHA e ENTRAR."
+    <TextView android:text="Use as setas do controle para escolher USUÁRIO, SENHA, ENTRAR e ATUALIZAR."
         android:textColor="#D6DCE3" android:textSize="16sp" android:layout_marginTop="8dp"
         android:layout_width="wrap_content" android:layout_height="wrap_content" />
 
@@ -23,8 +23,12 @@
             android:layout_width="300dp" android:layout_height="64dp" android:layout_marginEnd="18dp" />
 
         <Button android:id="@+id/login" android:text="ENTRAR" android:textSize="20sp" android:focusable="true"
-            android:nextFocusLeft="@id/password" android:minWidth="180dp" android:minHeight="64dp"
-            android:layout_width="180dp" android:layout_height="64dp" />
+            android:nextFocusLeft="@id/password" android:nextFocusRight="@id/refresh" android:minWidth="160dp" android:minHeight="64dp"
+            android:layout_width="160dp" android:layout_height="64dp" android:layout_marginEnd="12dp" />
+
+        <Button android:id="@+id/refresh" android:text="ATUALIZAR" android:textSize="20sp" android:focusable="true"
+            android:nextFocusLeft="@id/login" android:minWidth="190dp" android:minHeight="64dp"
+            android:layout_width="190dp" android:layout_height="64dp" />
     </LinearLayout>
 
     <TextView android:id="@+id/status" android:text="Entre com o usuário e a senha criados no painel Base 2."
