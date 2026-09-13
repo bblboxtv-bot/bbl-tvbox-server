@@ -32,6 +32,7 @@ async def api_apps_list(req: Request):
     rows = v5.rows(c, '''
         SELECT q.id AS queue_id,q.app_id AS app_id,q.status AS queue_status,q.created_at AS queue_created,
                COALESCE(q.install_target,'container') AS install_target,
+               COALESCE(q.action,'install') AS action,
                a.name AS name,a.package_name AS package_name,a.version_name AS version_name,
                a.version_code AS version_code,a.sha256 AS sha256
         FROM base2_remote_apps q
@@ -44,8 +45,9 @@ async def api_apps_list(req: Request):
     seen = set(); out = []
     for x in rows:
         aid = x.get('app_id')
-        key = (aid, x.get('install_target') or 'container')
+        target = x.get('install_target') or 'container'
+        key = (aid, target)
         if not aid or key in seen: continue
         seen.add(key)
-        out.append({'queue_id':x.get('queue_id') or '','id':aid,'name':x.get('name') or 'Aplicativo','package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','status':x.get('queue_status') or 'pending','install_target':x.get('install_target') or 'container','download_url':f'{BASE_URL}/base2/api/apps/{aid}/download','sha256':x.get('sha256') or ''})
+        out.append({'queue_id':x.get('queue_id') or '','id':aid,'name':x.get('name') or 'Aplicativo','package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','status':x.get('queue_status') or 'pending','install_target':target,'action':x.get('action') or 'install','download_url':f'{BASE_URL}/base2/api/apps/{aid}/download','sha256':x.get('sha256') or ''})
     return {'ok': True, 'apps': out}
