@@ -15,6 +15,7 @@ def init_remote_apps():
     v5.ex(c, "CREATE TABLE IF NOT EXISTS base2_remote_apps(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,app_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT NOT NULL,finished_at TEXT,result TEXT NOT NULL DEFAULT '')")
     c.commit()
     v5.col(c, "ALTER TABLE base2_remote_apps ADD COLUMN install_target TEXT NOT NULL DEFAULT 'container'")
+    v5.col(c, "ALTER TABLE base2_remote_apps ADD COLUMN action TEXT NOT NULL DEFAULT 'install'")
     v5.ex(c, f"CREATE TABLE IF NOT EXISTS base2_app_blobs(app_id TEXT PRIMARY KEY, data {blob_type} NOT NULL, size_bytes INTEGER NOT NULL DEFAULT 0, sha256 TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)")
     v5.ex(c, "CREATE TABLE IF NOT EXISTS base2_app_files(app_id TEXT PRIMARY KEY,size_bytes INTEGER NOT NULL,sha256 TEXT NOT NULL,chunk_count INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)")
     v5.ex(c, f"CREATE TABLE IF NOT EXISTS base2_app_chunks(app_id TEXT NOT NULL,chunk_index INTEGER NOT NULL,data {blob_type} NOT NULL,PRIMARY KEY(app_id,chunk_index))")
@@ -44,20 +45,30 @@ def resolve_persisted_app(c, app_id: str):
     return None
 
 
-def queue_install(c, client_id: str, app_id: str, install_target: str = 'container'):
+def _queue(c, client_id: str, app_id: str, install_target: str, action: str):
     install_target = (install_target or 'container').strip().lower()
+    action = (action or 'install').strip().lower()
     if install_target not in ('container','device'):
-        raise HTTPException(400, 'Destino de instalação inválido')
+        raise HTTPException(400, 'Destino inválido')
+    if action not in ('install','uninstall'):
+        raise HTTPException(400, 'Ação inválida')
     cl = v5.one(c, 'SELECT * FROM base2_clients WHERE id=?', (client_id,))
     if not cl: raise HTTPException(404, 'Cliente não encontrado')
     a = resolve_persisted_app(c, app_id)
     if not a: raise HTTPException(409, 'APK ainda não está salvo. Reenvie esse aplicativo no painel Base 2.')
     app_id = a['id']
-    existing = v5.one(c, "SELECT * FROM base2_remote_apps WHERE client_id=? AND app_id=? AND status='pending' AND COALESCE(install_target,'container')=?", (client_id, app_id, install_target))
-    if not existing:
-        v5.ex(c, 'INSERT INTO base2_remote_apps(id,client_id,app_id,status,created_at,result,install_target) VALUES(?,?,?,?,?,?,?)',
-              (secrets.token_hex(8), client_id, app_id, 'pending', v5.now(), '', install_target))
+    v5.ex(c, "DELETE FROM base2_remote_apps WHERE client_id=? AND app_id=? AND status='pending' AND COALESCE(install_target,'container')=?", (client_id, app_id, install_target))
+    v5.ex(c, 'INSERT INTO base2_remote_apps(id,client_id,app_id,status,created_at,result,install_target,action) VALUES(?,?,?,?,?,?,?,?)',
+          (secrets.token_hex(8), client_id, app_id, 'pending', v5.now(), '', install_target, action))
     return cl, a
+
+
+def queue_install(c, client_id: str, app_id: str, install_target: str = 'container'):
+    return _queue(c,client_id,app_id,install_target,'install')
+
+
+def queue_uninstall(c, client_id: str, app_id: str, install_target: str = 'container'):
+    return _queue(c,client_id,app_id,install_target,'uninstall')
 
 
 def _put_chunk(aid, idx, chunk):
@@ -84,7 +95,6 @@ def save_app(apk, name):
     h = hashlib.sha256(data).hexdigest()
     m = v5.apkmeta(p); m['name'] = name.strip() or m['name']
     aid = secrets.token_hex(8)
-
     c = v5.db()
     old_ids = [x['id'] for x in v5.rows(c, 'SELECT id FROM apps WHERE package_name=?', (m.get('package_name') or '',))] if m.get('package_name') else []
     v5.ex(c, 'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
@@ -92,14 +102,11 @@ def save_app(apk, name):
     v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
           (aid,len(data),h,(len(data)+CHUNK_SIZE-1)//CHUNK_SIZE,0,v5.now()))
     c.commit(); c.close()
-
     try:
         for idx, pos in enumerate(range(0, len(data), CHUNK_SIZE)):
             _put_chunk(aid, idx, data[pos:pos+CHUNK_SIZE])
-        c = v5.db()
-        v5.ex(c, 'UPDATE base2_app_files SET ready=1 WHERE app_id=?', (aid,))
-        for old_id in old_ids:
-            v5.ex(c, 'UPDATE base2_remote_apps SET app_id=? WHERE app_id=?', (aid, old_id))
+        c = v5.db(); v5.ex(c, 'UPDATE base2_app_files SET ready=1 WHERE app_id=?', (aid,))
+        for old_id in old_ids: v5.ex(c, 'UPDATE base2_remote_apps SET app_id=? WHERE app_id=?', (aid, old_id))
         c.commit(); c.close()
     except Exception:
         raise HTTPException(503, 'Falha temporária ao salvar APK. Tente enviar novamente.')
@@ -109,6 +116,10 @@ def save_app(apk, name):
 def app_cards(rows):
     return ''.join(f'<div class="card"><b>{admin.esc(a["name"])}</b><br><span class="muted">{admin.esc(a.get("package_name") or "-")} • versão {admin.esc(a.get("version_name") or "-")} • APK SALVO</span></div>' for a in rows) or '<div class="card muted">Nenhum APK salvo. Use “Adicionar APK”.</div>'
 
+
+def _remote_form(copts,aopts,action_url):
+    return f'''<div class="card"><h3>Instalar / Desinstalar remotamente</h3><form method="post" action="{action_url}"><select name="client_id" required><option value="">Escolha o cliente</option>{copts}</select><select name="app_id" required><option value="">Escolha o aplicativo</option>{aopts}</select><select name="install_target" required><option value="container">DENTRO DO BBL CONTAINER</option><option value="device">DIRETO NA TV BOX</option></select><button name="action" value="install">INSTALAR NO CLIENTE</button><button name="action" value="uninstall" class="danger" onclick="return confirm('Desinstalar este aplicativo do cliente?')">DESINSTALAR DO CLIENTE</button></form><div class="muted">Na TV BOX, o Android pode pedir confirmação para instalar ou desinstalar.</div></div>'''
+
 @app.get('/base2/painel/aplicativos')
 def admin_apps(req: Request, ok: str=''):
     if not admin.admin_ok(req): return admin.redir('/base2/painel/login')
@@ -116,16 +127,19 @@ def admin_apps(req: Request, ok: str=''):
     aopts=''.join(f'<option value="{a["id"]}">{admin.esc(a["name"])} • {admin.esc(a.get("package_name") or "")}</option>' for a in apps)
     copts=''.join(f'<option value="{x["id"]}">{admin.esc(x["name"])} • {admin.esc(x["username"])} • {admin.esc(x.get("reseller_name") or "ADMIN")}</option>' for x in clients)
     msg=f'<div class="card good">{admin.esc(ok)}</div>' if ok else ''
-    body=msg+f'''<div class="card"><h3>Adicionar APK</h3><div class="muted">Upload persistente em blocos para não perder APK após reinício.</div><form enctype="multipart/form-data" method="post" action="/base2/painel/aplicativos/upload"><input name="name" placeholder="Nome opcional"><input type="file" name="apk" accept=".apk" required><button>ADICIONAR APK</button></form></div><div class="card"><h3>Instalar remotamente</h3><form method="post" action="/base2/painel/aplicativos/instalar"><select name="client_id" required><option value="">Escolha o cliente</option>{copts}</select><select name="app_id" required><option value="">Escolha o aplicativo</option>{aopts}</select><select name="install_target" required><option value="container">DENTRO DO BBL CONTAINER</option><option value="device">DIRETO NA TV BOX</option></select><button>ENVIAR INSTALAÇÃO</button></form><div class="muted">Na opção TV BOX, o Android pode pedir confirmação da instalação.</div></div><h3>Aplicativos disponíveis</h3><div class="grid">{app_cards(apps)}</div>'''
+    body=msg+f'''<div class="card"><h3>Adicionar APK</h3><div class="muted">Upload persistente em blocos para não perder APK após reinício.</div><form enctype="multipart/form-data" method="post" action="/base2/painel/aplicativos/upload"><input name="name" placeholder="Nome opcional"><input type="file" name="apk" accept=".apk" required><button>ADICIONAR APK</button></form></div>'''+_remote_form(copts,aopts,'/base2/painel/aplicativos/acao')+f'''<h3>Aplicativos disponíveis</h3><div class="grid">{app_cards(apps)}</div>'''
     return admin.page('Aplicativos / Instalação remota',body)
 
 @app.post('/base2/painel/aplicativos/upload')
 def admin_app_upload(req:Request,name:str=Form(''),apk:UploadFile=File(...)):
     admin.adm(req); save_app(apk,name); return admin.redir('/base2/painel/aplicativos?ok=APK+salvo+com+sucesso')
 
-@app.post('/base2/painel/aplicativos/instalar')
-def admin_install(req:Request,client_id:str=Form(...),app_id:str=Form(...),install_target:str=Form('container')):
-    admin.adm(req); c=v5.db(); queue_install(c,client_id,app_id,install_target); c.commit(); c.close(); return admin.redir('/base2/painel/aplicativos?ok=Instalação+enviada')
+@app.post('/base2/painel/aplicativos/acao')
+def admin_action(req:Request,client_id:str=Form(...),app_id:str=Form(...),install_target:str=Form('container'),action:str=Form('install')):
+    admin.adm(req); c=v5.db()
+    if action=='uninstall': queue_uninstall(c,client_id,app_id,install_target); msg='Desinstalação enviada'
+    else: queue_install(c,client_id,app_id,install_target); msg='Instalação enviada'
+    c.commit(); c.close(); return admin.redir('/base2/painel/aplicativos?ok='+msg.replace(' ','+'))
 
 @app.get('/base2/revenda/aplicativos')
 def reseller_apps(req:Request,ok:str=''):
@@ -135,18 +149,20 @@ def reseller_apps(req:Request,ok:str=''):
     aopts=''.join(f'<option value="{a["id"]}">{reseller.esc(a["name"])} • {reseller.esc(a.get("package_name") or "")}</option>' for a in apps)
     copts=''.join(f'<option value="{x["id"]}">{reseller.esc(x["name"])} • {reseller.esc(x["username"])}</option>' for x in clients)
     msg=f'<div class="card good">{reseller.esc(ok)}</div>' if ok else ''
-    body=msg+f'''<div class="card"><h3>Adicionar APK</h3><form enctype="multipart/form-data" method="post" action="/base2/revenda/aplicativos/upload"><input name="name" placeholder="Nome opcional"><input type="file" name="apk" accept=".apk" required><button>ADICIONAR APK</button></form></div><div class="card"><h3>Instalar remotamente em cliente</h3><form method="post" action="/base2/revenda/aplicativos/instalar"><select name="client_id" required><option value="">Escolha o cliente</option>{copts}</select><select name="app_id" required><option value="">Escolha o aplicativo</option>{aopts}</select><select name="install_target" required><option value="container">DENTRO DO BBL CONTAINER</option><option value="device">DIRETO NA TV BOX</option></select><button>ENVIAR INSTALAÇÃO</button></form><div class="muted">Na opção TV BOX, o Android pode pedir confirmação da instalação.</div></div><div class="grid">{app_cards(apps)}</div>'''
+    body=msg+f'''<div class="card"><h3>Adicionar APK</h3><form enctype="multipart/form-data" method="post" action="/base2/revenda/aplicativos/upload"><input name="name" placeholder="Nome opcional"><input type="file" name="apk" accept=".apk" required><button>ADICIONAR APK</button></form></div>'''+_remote_form(copts,aopts,'/base2/revenda/aplicativos/acao')+f'''<div class="grid">{app_cards(apps)}</div>'''
     return reseller.page('Aplicativos / Instalação remota',body)
 
 @app.post('/base2/revenda/aplicativos/upload')
 def reseller_app_upload(req:Request,name:str=Form(''),apk:UploadFile=File(...)):
     reseller.require_reseller(req); save_app(apk,name); return reseller.redir('/base2/revenda/aplicativos?ok=APK+salvo+com+sucesso')
 
-@app.post('/base2/revenda/aplicativos/instalar')
-def reseller_install(req:Request,client_id:str=Form(...),app_id:str=Form(...),install_target:str=Form('container')):
+@app.post('/base2/revenda/aplicativos/acao')
+def reseller_action(req:Request,client_id:str=Form(...),app_id:str=Form(...),install_target:str=Form('container'),action:str=Form('install')):
     r=reseller.require_reseller(req); c=v5.db(); cl=v5.one(c,'SELECT * FROM base2_clients WHERE id=? AND reseller_id=?',(client_id,r['id']))
     if not cl:c.close();raise HTTPException(404,'Cliente não encontrado')
-    queue_install(c,client_id,app_id,install_target); c.commit(); c.close(); return reseller.redir('/base2/revenda/aplicativos?ok=Instalação+enviada')
+    if action=='uninstall': queue_uninstall(c,client_id,app_id,install_target); msg='Desinstalação enviada'
+    else: queue_install(c,client_id,app_id,install_target); msg='Instalação enviada'
+    c.commit(); c.close(); return reseller.redir('/base2/revenda/aplicativos?ok='+msg.replace(' ','+'))
 
 
 def _auth_client_by_token(c,token:str,device_id:str):
@@ -160,9 +176,9 @@ async def api_pending_apps(req:Request):
     except Exception:return JSONResponse({'ok':False,'error':'invalid_json'},400)
     token=str(d.get('token') or '').strip();device=str(d.get('device_id') or '').strip(); c=v5.db(); auth=_auth_client_by_token(c,token,device)
     if not auth:c.close();return JSONResponse({'ok':False,'error':'unauthorized'},401)
-    x=v5.one(c,"SELECT q.id queue_id,q.app_id,COALESCE(q.install_target,'container') install_target,a.* FROM base2_remote_apps q JOIN apps a ON a.id=q.app_id JOIN base2_app_files f ON f.app_id=a.id WHERE q.client_id=? AND q.status='pending' AND f.ready=1 ORDER BY q.created_at LIMIT 1",(auth['client_id'],)); c.close()
+    x=v5.one(c,"SELECT q.id queue_id,q.app_id,COALESCE(q.install_target,'container') install_target,COALESCE(q.action,'install') action,a.* FROM base2_remote_apps q JOIN apps a ON a.id=q.app_id JOIN base2_app_files f ON f.app_id=a.id WHERE q.client_id=? AND q.status='pending' AND f.ready=1 ORDER BY q.created_at LIMIT 1",(auth['client_id'],)); c.close()
     if not x:return {'ok':True,'app':None}
-    aid=x['app_id']; return {'ok':True,'app':{'queue_id':x['queue_id'],'id':aid,'name':x['name'],'package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','download_url':f'https://bbl-tvbox-manager-v2.onrender.com/base2/api/apps/{aid}/download','sha256':x.get('sha256') or '','install_target':x.get('install_target') or 'container'}}
+    aid=x['app_id']; return {'ok':True,'app':{'queue_id':x['queue_id'],'id':aid,'name':x['name'],'package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','download_url':f'https://bbl-tvbox-manager-v2.onrender.com/base2/api/apps/{aid}/download','sha256':x.get('sha256') or '','install_target':x.get('install_target') or 'container','action':x.get('action') or 'install'}}
 
 @app.post('/base2/api/apps/result')
 async def api_remote_app_result(req:Request):
@@ -173,4 +189,8 @@ async def api_remote_app_result(req:Request):
     if not auth:c.close();return JSONResponse({'ok':False,'error':'unauthorized'},401)
     q=v5.one(c,'SELECT * FROM base2_remote_apps WHERE id=? AND client_id=?',(qid,auth['client_id']))
     if not q:c.close();return JSONResponse({'ok':False,'error':'not_found'},404)
-    v5.ex(c,'UPDATE base2_remote_apps SET status=?,finished_at=?,result=? WHERE id=?',(status,v5.now(),result,qid));c.commit();c.close();return {'ok':True}
+    if (q.get('action') or 'install')=='uninstall' and status in ('done','requested'):
+        v5.ex(c,"DELETE FROM base2_remote_apps WHERE client_id=? AND app_id=? AND COALESCE(install_target,'container')=?",(q['client_id'],q['app_id'],q.get('install_target') or 'container'))
+    else:
+        v5.ex(c,'UPDATE base2_remote_apps SET status=?,finished_at=?,result=? WHERE id=?',(status,v5.now(),result,qid))
+    c.commit();c.close();return {'ok':True}
