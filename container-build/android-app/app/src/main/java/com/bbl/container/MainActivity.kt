@@ -3,8 +3,10 @@ package com.bbl.container
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
-import android.util.Log
-import android.widget.*
+import android.provider.Settings
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -13,154 +15,78 @@ import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
     private val api by lazy { ApiClient(getString(R.string.server_url)) }
-    private lateinit var list: RecyclerView
     private lateinit var status: TextView
-    private lateinit var activate: Button
-    private val appState by lazy { getSharedPreferences("virtual_app_state", 0) }
-
+    private lateinit var list: RecyclerView
+    private lateinit var login: Button
     @Volatile private var engineReady = false
-    @Volatile private var engineError: String? = null
 
-    override fun onCreate(b: Bundle?) {
-        super.onCreate(b)
-        window.decorView.setBackgroundColor(Color.rgb(16, 18, 22))
+    override fun onCreate(state: Bundle?) {
+        super.onCreate(state)
+        window.decorView.setBackgroundColor(Color.rgb(16,18,22))
         setContentView(R.layout.activity_main)
+        status=findViewById(R.id.status)
+        list=findViewById(R.id.list)
+        login=findViewById(R.id.login)
+        list.layoutManager=LinearLayoutManager(this)
+        val user=findViewById<EditText>(R.id.username)
+        val pass=findViewById<EditText>(R.id.password)
 
-        list = findViewById(R.id.list)
-        status = findViewById(R.id.status)
-        activate = findViewById(R.id.activate)
-        list.layoutManager = LinearLayoutManager(this)
-
-        status.text = "Iniciando motor virtual..."
-        activate.isEnabled = false
-
-        val code = findViewById<EditText>(R.id.code)
-        activate.setOnClickListener {
-            if (!engineReady) {
-                status.text = engineError ?: "Motor virtual ainda está iniciando..."
-                return@setOnClickListener
-            }
+        login.setOnClickListener {
+            val u=user.text.toString().trim()
+            val p=pass.text.toString()
+            if(u.isBlank() || p.isBlank()) { status.text="Informe usuário e senha."; return@setOnClickListener }
+            if(!engineReady) { status.text="Motor virtual ainda está iniciando..."; return@setOnClickListener }
+            status.text="Entrando..."
+            login.isEnabled=false
             thread {
-                runCatching { api.activate(code.text.toString().trim()) }
-                    .onSuccess {
-                        getSharedPreferences("p", 0).edit().putString("token", it).apply()
-                        runOnUiThread { load() }
-                    }.onFailure { msg(it) }
+                runCatching { api.login(u,p,deviceId()) }
+                    .onSuccess { s -> runOnUiThread { login.isEnabled=true; status.text="Login realizado. Buscando aplicativos..."; loadCatalog(s.token) } }
+                    .onFailure { e -> runOnUiThread { login.isEnabled=true; status.text=e.message ?: "Login recusado pelo servidor" } }
             }
         }
 
-        bootstrapEngine()
-    }
-
-    private fun bootstrapEngine() {
-        thread(name = "bbl-blackbox-init") {
-            val result = runCatching {
-                val engine = VirtualEngineProvider.create()
-                engine.init(applicationContext)
-                val s = engine.status()
-                check(s.available) { s.details }
-                s
-            }
-            result.onSuccess { s ->
-                engineReady = true
-                runOnUiThread {
-                    status.text = "Motor: ${s.name} — ${s.details}"
-                    activate.isEnabled = true
-                    if (getSharedPreferences("p", 0).contains("token")) load()
-                }
-            }.onFailure { e ->
-                engineReady = false
-                engineError = e.message ?: e.javaClass.simpleName
-                Log.e("BBLContainer", "BlackBox init failed", e)
-                runOnUiThread {
-                    status.text = "Falha ao iniciar motor: ${engineError}"
-                    activate.isEnabled = false
-                }
-            }
-        }
-    }
-
-    private fun load() {
-        val t = getSharedPreferences("p", 0).getString("token", "")!!
-        runOnUiThread { status.text = "Sincronizando catálogo..." }
         thread {
-            runCatching { api.catalog(t) }.onSuccess { apps ->
-                cleanupRevoked(apps)
-                runOnUiThread {
-                    val e = runCatching { VirtualEngineProvider.create().status() }.getOrNull()
-                    status.text = "${apps.size} app(s) liberado(s) • motor ${e?.name ?: "indisponível"}"
-                    list.adapter = AppAdapter(apps) { a -> prepareAndRun(t, a) }
-                }
-            }.onFailure { msg(it) }
+            runCatching { VirtualEngineProvider.create().init(applicationContext); VirtualEngineProvider.create().status() }
+                .onSuccess { s -> engineReady=s.available; runOnUiThread { status.text=if(s.available) "Entre com o usuário e a senha criados no painel Base 2." else s.details } }
+                .onFailure { e -> runOnUiThread { status.text="Falha ao iniciar motor: ${e.message}" } }
         }
     }
 
-    private fun cleanupRevoked(current: List<CatalogApp>) {
-        val allowedIds = current.map { it.id }.toSet()
-        val engine = VirtualEngineProvider.create()
-        val editor = appState.edit()
-        appState.all.keys.filter { it.startsWith("pkg_") }.forEach { key ->
-            val id = key.removePrefix("pkg_")
-            if (id !in allowedIds) {
-                val pkg = appState.getString(key, null)
-                if (!pkg.isNullOrBlank() && runCatching { engine.status().available }.getOrDefault(false)) {
-                    engine.removeVirtual(pkg)
-                }
-                File(filesDir, "virtual_apps/$id.apk").delete()
-                editor.remove(key)
-            }
-        }
-        editor.apply()
-    }
+    private fun deviceId(): String = Settings.Secure.getString(contentResolver,Settings.Secure.ANDROID_ID) ?: android.os.Build.MODEL
 
-    private fun prepareAndRun(t: String, a: CatalogApp) {
-        val engine = VirtualEngineProvider.create()
-        if (!engineReady || !runCatching { engine.status().available }.getOrDefault(false)) {
-            status.text = engineError ?: "Motor virtual não está pronto."
-            return
-        }
-        status.text = "Preparando ${a.name}..."
+    private fun loadCatalog(token:String) {
         thread {
-            val f = File(filesDir, "virtual_apps/${a.id}.apk")
-            f.parentFile?.mkdirs()
+            runCatching { api.catalog(token) }
+                .onSuccess { apps -> runOnUiThread {
+                    status.text=if(apps.isEmpty()) "Libere um aplicativo para este cliente no painel Base 2." else "Aplicativos liberados: ${apps.size}"
+                    list.adapter=AppAdapter(apps) { app -> runApp(token,app) }
+                }}
+                .onFailure { e -> runOnUiThread { status.text=e.message ?: "Falha ao consultar aplicativos" } }
+        }
+    }
+
+    private fun runApp(token:String, app:CatalogApp) {
+        status.text="Preparando ${app.name}..."
+        thread {
+            val apk=File(filesDir,"virtual_apps/${app.id}.apk")
+            apk.parentFile?.mkdirs()
             runCatching {
-                if (!f.exists() || !ApiClient.sha256(f).equals(a.sha256, ignoreCase = true)) {
-                    api.download(t, a.downloadUrl, f)
-                }
-                require(ApiClient.sha256(f).equals(a.sha256, ignoreCase = true)) { "SHA-256 divergente" }
-                val parsedPkg = packageManager.getPackageArchiveInfo(f.absolutePath, PackageManager.GET_META_DATA)?.packageName
-                require(parsedPkg == a.packageName) {
-                    "APK recebido pertence a ${parsedPkg ?: "pacote desconhecido"}, esperado ${a.packageName}"
-                }
-                engine.installVirtual(f, a.packageName).getOrThrow()
-                appState.edit().putString("pkg_${a.id}", a.packageName).apply()
-                engine.launchVirtual(a.packageName).getOrThrow()
-            }.onSuccess {
-                runOnUiThread { status.text = "Executando ${a.name}" }
-            }.onFailure { msg(it) }
+                if(!apk.exists() || (app.sha256.isNotBlank() && !ApiClient.sha256(apk).equals(app.sha256,true))) api.download(token,app.downloadUrl,apk)
+                if(app.sha256.isNotBlank()) require(ApiClient.sha256(apk).equals(app.sha256,true)) { "Arquivo baixado não passou na verificação SHA-256" }
+                val pkg=packageManager.getPackageArchiveInfo(apk.absolutePath,PackageManager.GET_META_DATA)?.packageName
+                require(pkg==app.packageName) { "APK recebido não corresponde ao pacote liberado" }
+                val engine=VirtualEngineProvider.create()
+                engine.installVirtual(apk,app.packageName).getOrThrow()
+                engine.launchVirtual(app.packageName).getOrThrow()
+            }.onSuccess { runOnUiThread { status.text="Executando ${app.name}" } }
+             .onFailure { e -> runOnUiThread { status.text=e.message ?: "Erro" } }
         }
     }
-
-    private fun msg(e: Throwable) = runOnUiThread {
-        Log.e("BBLContainer", "Operation failed", e)
-        status.text = e.message ?: "Erro"
-    }
 }
 
-class AppAdapter(private val items: List<CatalogApp>, private val click: (CatalogApp) -> Unit) : RecyclerView.Adapter<AppVH>() {
-    override fun onCreateViewHolder(p: android.view.ViewGroup, v: Int) = AppVH(TextView(p.context).apply {
-        setPadding(24, 24, 24, 24)
-        textSize = 22f
-        setTextColor(Color.WHITE)
-        isFocusable = true
-        isFocusableInTouchMode = true
-        setBackgroundColor(Color.rgb(28, 31, 38))
-    })
-    override fun getItemCount() = items.size
-    override fun onBindViewHolder(h: AppVH, i: Int) {
-        val a = items[i]
-        h.t.text = "${a.name}\n${a.packageName} • ${a.version}"
-        h.t.setOnClickListener { click(a) }
-    }
+class AppAdapter(private val items:List<CatalogApp>, private val click:(CatalogApp)->Unit):RecyclerView.Adapter<AppVH>() {
+    override fun onCreateViewHolder(parent:android.view.ViewGroup,viewType:Int)=AppVH(TextView(parent.context).apply { setPadding(24,24,24,24); textSize=22f; setTextColor(Color.WHITE); isFocusable=true; setBackgroundColor(Color.rgb(28,31,38)) })
+    override fun getItemCount()=items.size
+    override fun onBindViewHolder(holder:AppVH,position:Int) { val a=items[position]; holder.text.text="${a.name}\n${a.packageName} • ${a.version}"; holder.text.setOnClickListener { click(a) } }
 }
-class AppVH(val t: TextView) : RecyclerView.ViewHolder(t)
+class AppVH(val text:TextView):RecyclerView.ViewHolder(text)
