@@ -1,0 +1,11 @@
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">#101216</item>
+        <item name="android:navigationBarColor">#101216</item>
+        <item name="android:statusBarColor">#101216</item>
+        <item name="android:colorAccent">#D5A93F</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

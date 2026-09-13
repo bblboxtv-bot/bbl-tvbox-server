@@ -1,0 +1,49 @@
+name: Build Container Clean
+
+on:
+  push:
+    branches: [ container-clean-build ]
+    paths:
+      - 'container-build/**'
+      - '.github/workflows/build-container-clean.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: container-build/android-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13846066"
+      - name: Vendor pinned BlackBox engine
+        run: bash setup_blackbox.sh
+      - name: Install Gradle 8.9
+        working-directory: ${{ github.workspace }}
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
+      - name: Build blackboxDebug
+        run: gradle --no-daemon :app:assembleBlackboxDebug
+      - name: Verify APK
+        run: |
+          test -f app/build/outputs/apk/blackbox/debug/app-blackbox-debug.apk
+          unzip -t app/build/outputs/apk/blackbox/debug/app-blackbox-debug.apk >/dev/null
+          sha256sum app/build/outputs/apk/blackbox/debug/app-blackbox-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BBL-CONTAINER-CLEAN-FIX
+          path: container-build/android-app/app/build/outputs/apk/blackbox/debug/app-blackbox-debug.apk
+          if-no-files-found: error
