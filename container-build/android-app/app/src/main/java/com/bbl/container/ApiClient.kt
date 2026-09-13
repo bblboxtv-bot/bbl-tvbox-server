@@ -12,6 +12,16 @@ data class CatalogApp(val id:String,val name:String,val packageName:String,val v
 
 class ApiClient(private val base:String) {
     fun login(username:String,password:String,deviceId:String):DeviceSession {
+        try {
+            return loginOnce(username,password,deviceId)
+        } catch(e:IllegalStateException) {
+            if(e.message != "device_in_use") throw e
+            rebind(username,password,deviceId)
+            return loginOnce(username,password,deviceId)
+        }
+    }
+
+    private fun loginOnce(username:String,password:String,deviceId:String):DeviceSession {
         val c=conn("/base2/api/login","POST",null)
         val body=JSONObject().put("username",username).put("password",password).put("device_id",deviceId).toString()
         c.outputStream.use{it.write(body.toByteArray())}
@@ -19,11 +29,22 @@ class ApiClient(private val base:String) {
         val o=JSONObject(text)
         val token=o.optString("token")
         if(token.isBlank()) throw IllegalStateException(o.optString("detail",o.optString("error","Login recusado pelo servidor")))
-        return DeviceSession(token,o.optString("device_id",deviceId))
+        return DeviceSession(token,deviceId)
     }
 
-    fun catalog(token:String):List<CatalogApp>{
-        val c=conn("/base2/api/apps/list","GET",token)
+    private fun rebind(username:String,password:String,deviceId:String) {
+        val c=conn("/base2/api/rebind","POST",null)
+        val body=JSONObject().put("username",username).put("password",password).put("device_id",deviceId).toString()
+        c.outputStream.use{it.write(body.toByteArray())}
+        val text=readResponse(c)
+        val o=JSONObject(text)
+        if(!o.optBoolean("ok",false)) throw IllegalStateException(o.optString("error","Não foi possível trocar o aparelho"))
+    }
+
+    fun catalog(token:String,deviceId:String):List<CatalogApp>{
+        val c=conn("/base2/api/apps/list","POST",null)
+        val body=JSONObject().put("token",token).put("device_id",deviceId).toString()
+        c.outputStream.use{it.write(body.toByteArray())}
         val text=readResponse(c)
         val a=if(text.trim().startsWith("[")) JSONArray(text) else JSONObject(text).optJSONArray("apps")?:JSONArray()
         return (0 until a.length()).mapNotNull { i ->
