@@ -30,35 +30,45 @@ class MainActivity : AppCompatActivity() {
         list.layoutManager=LinearLayoutManager(this)
         val user=findViewById<EditText>(R.id.username)
         val pass=findViewById<EditText>(R.id.password)
+        user.requestFocus()
 
         login.setOnClickListener {
             val u=user.text.toString().trim()
             val p=pass.text.toString()
-            if(u.isBlank() || p.isBlank()) { status.text="Informe usuário e senha."; return@setOnClickListener }
+            if(u.isBlank() || p.isBlank()) { status.text="Informe USUÁRIO e SENHA."; if(u.isBlank()) user.requestFocus() else pass.requestFocus(); return@setOnClickListener }
             if(!engineReady) { status.text="Motor virtual ainda está iniciando..."; return@setOnClickListener }
-            status.text="Entrando..."
+            status.text="Conectando ao Base 2..."
             login.isEnabled=false
             thread {
                 runCatching { api.login(u,p,deviceId()) }
-                    .onSuccess { s -> runOnUiThread { login.isEnabled=true; status.text="Login realizado. Buscando aplicativos..."; loadCatalog(s.token) } }
-                    .onFailure { e -> runOnUiThread { login.isEnabled=true; status.text=e.message ?: "Login recusado pelo servidor" } }
+                    .onSuccess { s -> runOnUiThread { login.isEnabled=true; status.text="Login realizado. Buscando aplicativos..."; loadCatalog(s.token,s.deviceId) } }
+                    .onFailure { e -> runOnUiThread {
+                        login.isEnabled=true
+                        status.text=when(e.message){
+                            "invalid_credentials" -> "Usuário ou senha inválidos."
+                            "blocked" -> "Cliente bloqueado no painel Base 2."
+                            "expired" -> "Cliente vencido no painel Base 2."
+                            "device_in_use" -> "Este usuário está vinculado a outro aparelho."
+                            else -> e.message ?: "Falha ao conectar ao Base 2"
+                        }
+                    } }
             }
         }
 
         thread {
             runCatching { VirtualEngineProvider.create().init(applicationContext); VirtualEngineProvider.create().status() }
-                .onSuccess { s -> engineReady=s.available; runOnUiThread { status.text=if(s.available) "Entre com o usuário e a senha criados no painel Base 2." else s.details } }
+                .onSuccess { s -> engineReady=s.available; runOnUiThread { status.text=if(s.available) "Digite USUÁRIO e SENHA e pressione ENTRAR." else s.details } }
                 .onFailure { e -> runOnUiThread { status.text="Falha ao iniciar motor: ${e.message}" } }
         }
     }
 
     private fun deviceId(): String = Settings.Secure.getString(contentResolver,Settings.Secure.ANDROID_ID) ?: android.os.Build.MODEL
 
-    private fun loadCatalog(token:String) {
+    private fun loadCatalog(token:String, deviceId:String) {
         thread {
-            runCatching { api.catalog(token) }
+            runCatching { api.catalog(token,deviceId) }
                 .onSuccess { apps -> runOnUiThread {
-                    status.text=if(apps.isEmpty()) "Libere um aplicativo para este cliente no painel Base 2." else "Aplicativos liberados: ${apps.size}"
+                    status.text=if(apps.isEmpty()) "Nenhum aplicativo liberado para este cliente no painel Base 2." else "Aplicativos liberados: ${apps.size}"
                     list.adapter=AppAdapter(apps) { app -> runApp(token,app) }
                 }}
                 .onFailure { e -> runOnUiThread { status.text=e.message ?: "Falha ao consultar aplicativos" } }
