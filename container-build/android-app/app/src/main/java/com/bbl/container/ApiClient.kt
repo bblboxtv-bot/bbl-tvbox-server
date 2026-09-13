@@ -8,7 +8,7 @@ import java.io.File
 import java.security.MessageDigest
 
 data class DeviceSession(val token:String,val deviceId:String)
-data class CatalogApp(val id:String,val name:String,val packageName:String,val version:String,val sha256:String,val downloadUrl:String)
+data class CatalogApp(val id:String,val name:String,val packageName:String,val version:String,val sha256:String,val downloadUrl:String,val installTarget:String)
 
 class ApiClient(private val base:String) {
     fun login(username:String,password:String,deviceId:String):DeviceSession {
@@ -50,7 +50,7 @@ class ApiClient(private val base:String) {
         return (0 until a.length()).mapNotNull { i ->
             val o=a.optJSONObject(i)?:return@mapNotNull null
             val id=o.optString("id"); val pkg=o.optString("package_name"); val url=o.optString("download_url")
-            if(id.isBlank()||pkg.isBlank()||url.isBlank()) null else CatalogApp(id,o.optString("name",pkg),pkg,o.optString("version_name"),o.optString("sha256"),url)
+            if(id.isBlank()||pkg.isBlank()||url.isBlank()) null else CatalogApp(id,o.optString("name",pkg),pkg,o.optString("version_name"),o.optString("sha256"),url,o.optString("install_target","container"))
         }
     }
 
