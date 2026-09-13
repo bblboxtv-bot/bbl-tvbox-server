@@ -2,6 +2,7 @@ import hashlib
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import v5
+import v5_base2_rebind
 
 app = v5.app
 BASE_URL = 'https://bbl-tvbox-manager-v2.onrender.com'
