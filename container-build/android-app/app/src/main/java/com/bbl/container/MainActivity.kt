@@ -1,9 +1,12 @@
 package com.bbl.container
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
@@ -12,6 +15,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
@@ -146,21 +150,55 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runApp(token:String, app:CatalogApp) {
-        status.text="Preparando ${app.name}..."
+        if(app.installTarget.equals("device",true)) runDeviceApp(token,app) else runContainerApp(token,app)
+    }
+
+    private fun downloadAndValidate(token:String, app:CatalogApp, folder:String):File {
+        val apk=File(filesDir,"$folder/${app.id}.apk")
+        apk.parentFile?.mkdirs()
+        if(!apk.exists() || (app.sha256.isNotBlank() && !ApiClient.sha256(apk).equals(app.sha256,true))) api.download(token,app.downloadUrl,apk)
+        if(app.sha256.isNotBlank()) require(ApiClient.sha256(apk).equals(app.sha256,true)) { "Arquivo baixado não passou na verificação SHA-256" }
+        val pkg=packageManager.getPackageArchiveInfo(apk.absolutePath,PackageManager.GET_META_DATA)?.packageName
+        require(pkg==app.packageName) { "APK recebido não corresponde ao pacote liberado" }
+        return apk
+    }
+
+    private fun runContainerApp(token:String, app:CatalogApp) {
+        status.text="Preparando ${app.name} no contêiner..."
         thread {
-            val apk=File(filesDir,"virtual_apps/${app.id}.apk")
-            apk.parentFile?.mkdirs()
             runCatching {
-                if(!apk.exists() || (app.sha256.isNotBlank() && !ApiClient.sha256(apk).equals(app.sha256,true))) api.download(token,app.downloadUrl,apk)
-                if(app.sha256.isNotBlank()) require(ApiClient.sha256(apk).equals(app.sha256,true)) { "Arquivo baixado não passou na verificação SHA-256" }
-                val pkg=packageManager.getPackageArchiveInfo(apk.absolutePath,PackageManager.GET_META_DATA)?.packageName
-                require(pkg==app.packageName) { "APK recebido não corresponde ao pacote liberado" }
+                val apk=downloadAndValidate(token,app,"virtual_apps")
                 val engine=VirtualEngineProvider.create()
                 engine.installVirtual(apk,app.packageName).getOrThrow()
                 engine.launchVirtual(app.packageName).getOrThrow()
-            }.onSuccess { runOnUiThread { status.text="Executando ${app.name}" } }
+            }.onSuccess { runOnUiThread { status.text="Executando ${app.name} no contêiner" } }
              .onFailure { e -> runOnUiThread { status.text=e.message ?: "Erro" } }
         }
+    }
+
+    private fun runDeviceApp(token:String, app:CatalogApp) {
+        status.text="Baixando ${app.name} para instalar na TV Box..."
+        thread {
+            runCatching { downloadAndValidate(token,app,"device_apps") }
+                .onSuccess { apk -> runOnUiThread { openAndroidInstaller(apk,app.name) } }
+                .onFailure { e -> runOnUiThread { status.text=e.message ?: "Erro ao preparar instalação na TV Box" } }
+        }
+    }
+
+    private fun openAndroidInstaller(apk:File, appName:String) {
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            status.text="Autorize BBL Container a instalar apps desconhecidos e depois selecione $appName novamente."
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        val uri=FileProvider.getUriForFile(this,"$packageName.fileprovider",apk)
+        val intent=Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri,"application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        status.text="Abrindo instalador da TV Box para $appName..."
+        startActivity(intent)
     }
 }
 
@@ -193,7 +231,8 @@ class AppAdapter(private val items:List<CatalogApp>, private val click:(CatalogA
 
     override fun onBindViewHolder(holder:AppVH,position:Int) {
         val a=items[position]
-        holder.text.text="${a.name}\n${a.packageName}  •  ${a.version}\nPRESSIONE OK PARA ABRIR / INSTALAR"
+        val target=if(a.installTarget.equals("device",true)) "TV BOX" else "CONTÊINER"
+        holder.text.text="${a.name}\n${a.packageName}  •  ${a.version}\nDESTINO: $target  •  PRESSIONE OK PARA INSTALAR / ABRIR"
         holder.text.background=background(false)
         holder.text.setOnFocusChangeListener { _, focused ->
             holder.text.background=background(focused)
