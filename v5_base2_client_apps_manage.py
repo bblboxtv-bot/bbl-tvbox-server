@@ -92,6 +92,11 @@ def reseller_remove_client_app(req:Request,client_id:str=Form(...),app_id:str=Fo
     return reseller.redir('/base2/revenda/cliente-apps?ok=Aplicativo+removido+do+cliente')
 
 
+def _safe_html_response(original, text):
+    headers={k:v for k,v in original.headers.items() if k.lower() not in ('content-length','content-type')}
+    return HTMLResponse(text,status_code=original.status_code,headers=headers)
+
+
 _old_admin_page=admin.page
 def _admin_page_with_remove(title,body,nav=True):
     r=_old_admin_page(title,body,nav)
@@ -99,7 +104,7 @@ def _admin_page_with_remove(title,body,nav=True):
         txt=r.body.decode('utf-8')
         if '/base2/painel/cliente-apps' not in txt:
             txt=txt.replace('<a href="/base2/painel/sair">Sair</a>','<a href="/base2/painel/cliente-apps">Apps dos clientes / Remover</a><a href="/base2/painel/sair">Sair</a>')
-        return HTMLResponse(txt,status_code=r.status_code,headers=dict(r.headers))
+        return _safe_html_response(r,txt)
     return r
 admin.page=_admin_page_with_remove
 
@@ -110,6 +115,6 @@ def _reseller_page_with_remove(title,body,nav=True):
         txt=r.body.decode('utf-8')
         if '/base2/revenda/cliente-apps' not in txt:
             txt=txt.replace('<a href="/base2/revenda/sair">Sair</a>','<a href="/base2/revenda/cliente-apps">Apps dos clientes / Remover</a><a href="/base2/revenda/sair">Sair</a>')
-        return HTMLResponse(txt,status_code=r.status_code,headers=dict(r.headers))
+        return _safe_html_response(r,txt)
     return r
 reseller.page=_reseller_page_with_remove
