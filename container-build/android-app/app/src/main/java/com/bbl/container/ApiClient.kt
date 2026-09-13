@@ -8,26 +8,19 @@ import java.io.File
 import java.security.MessageDigest
 
 data class DeviceSession(val token:String,val deviceId:String)
-data class CatalogApp(val id:String,val name:String,val packageName:String,val version:String,val sha256:String,val downloadUrl:String,val installTarget:String)
+data class CatalogApp(val queueId:String,val id:String,val name:String,val packageName:String,val version:String,val sha256:String,val downloadUrl:String,val installTarget:String,val action:String)
 
 class ApiClient(private val base:String) {
     fun login(username:String,password:String,deviceId:String):DeviceSession {
-        try {
-            return loginOnce(username,password,deviceId)
-        } catch(e:IllegalStateException) {
-            if(e.message != "device_in_use") throw e
-            rebind(username,password,deviceId)
-            return loginOnce(username,password,deviceId)
-        }
+        try { return loginOnce(username,password,deviceId) }
+        catch(e:IllegalStateException) { if(e.message != "device_in_use") throw e; rebind(username,password,deviceId); return loginOnce(username,password,deviceId) }
     }
 
     private fun loginOnce(username:String,password:String,deviceId:String):DeviceSession {
         val c=conn("/base2/api/login","POST",null)
         val body=JSONObject().put("username",username).put("password",password).put("device_id",deviceId).toString()
         c.outputStream.use{it.write(body.toByteArray())}
-        val text=readResponse(c)
-        val o=JSONObject(text)
-        val token=o.optString("token")
+        val o=JSONObject(readResponse(c)); val token=o.optString("token")
         if(token.isBlank()) throw IllegalStateException(o.optString("detail",o.optString("error","Login recusado pelo servidor")))
         return DeviceSession(token,deviceId)
     }
@@ -36,9 +29,7 @@ class ApiClient(private val base:String) {
         val c=conn("/base2/api/rebind","POST",null)
         val body=JSONObject().put("username",username).put("password",password).put("device_id",deviceId).toString()
         c.outputStream.use{it.write(body.toByteArray())}
-        val text=readResponse(c)
-        val o=JSONObject(text)
-        if(!o.optBoolean("ok",false)) throw IllegalStateException(o.optString("error","Não foi possível trocar o aparelho"))
+        val o=JSONObject(readResponse(c)); if(!o.optBoolean("ok",false)) throw IllegalStateException(o.optString("error","Não foi possível trocar o aparelho"))
     }
 
     fun catalog(token:String,deviceId:String):List<CatalogApp>{
@@ -50,8 +41,16 @@ class ApiClient(private val base:String) {
         return (0 until a.length()).mapNotNull { i ->
             val o=a.optJSONObject(i)?:return@mapNotNull null
             val id=o.optString("id"); val pkg=o.optString("package_name"); val url=o.optString("download_url")
-            if(id.isBlank()||pkg.isBlank()||url.isBlank()) null else CatalogApp(id,o.optString("name",pkg),pkg,o.optString("version_name"),o.optString("sha256"),url,o.optString("install_target","container"))
+            if(id.isBlank()||pkg.isBlank()) null else CatalogApp(o.optString("queue_id"),id,o.optString("name",pkg),pkg,o.optString("version_name"),o.optString("sha256"),url,o.optString("install_target","container"),o.optString("action","install"))
         }
+    }
+
+    fun reportResult(token:String,deviceId:String,queueId:String,status:String,result:String){
+        if(queueId.isBlank()) return
+        val c=conn("/base2/api/apps/result","POST",null)
+        val body=JSONObject().put("token",token).put("device_id",deviceId).put("queue_id",queueId).put("status",status).put("result",result).toString()
+        c.outputStream.use{it.write(body.toByteArray())}
+        readResponse(c)
     }
 
     fun download(token:String,path:String,out:File){
@@ -61,13 +60,9 @@ class ApiClient(private val base:String) {
     }
 
     private fun readResponse(c:HttpURLConnection):String {
-        val code=c.responseCode
-        val input=if(code in 200..299)c.inputStream else c.errorStream
+        val code=c.responseCode; val input=if(code in 200..299)c.inputStream else c.errorStream
         val text=input?.bufferedReader()?.use{it.readText()}?:""
-        if(code !in 200..299){
-            val msg=runCatching{JSONObject(text).optString("detail",JSONObject(text).optString("error"))}.getOrDefault("")
-            throw IllegalStateException(if(msg.isNotBlank()) msg else "HTTP $code")
-        }
+        if(code !in 200..299){ val msg=runCatching{JSONObject(text).optString("detail",JSONObject(text).optString("error"))}.getOrDefault(""); throw IllegalStateException(if(msg.isNotBlank()) msg else "HTTP $code") }
         return text
     }
 
