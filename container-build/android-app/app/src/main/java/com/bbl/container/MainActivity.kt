@@ -33,215 +33,81 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var loginRunning = false
     @Volatile private var currentToken: String? = null
     @Volatile private var currentDeviceId: String? = null
-
     private val prefs by lazy { getSharedPreferences("base2_login", Context.MODE_PRIVATE) }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         window.decorView.setBackgroundColor(Color.rgb(16,18,22))
         setContentView(R.layout.activity_main)
-        status=findViewById(R.id.status)
-        list=findViewById(R.id.list)
-        login=findViewById(R.id.login)
-        refresh=findViewById(R.id.refresh)
-        user=findViewById(R.id.username)
-        pass=findViewById(R.id.password)
-        list.layoutManager=LinearLayoutManager(this)
-
-        val savedUser=prefs.getString("username","") ?: ""
-        val savedPass=prefs.getString("password","") ?: ""
-        user.setText(savedUser)
-        pass.setText(savedPass)
-        if(savedUser.isBlank()) user.requestFocus() else login.requestFocus()
-
+        status=findViewById(R.id.status); list=findViewById(R.id.list); login=findViewById(R.id.login); refresh=findViewById(R.id.refresh)
+        user=findViewById(R.id.username); pass=findViewById(R.id.password); list.layoutManager=LinearLayoutManager(this)
+        val savedUser=prefs.getString("username","") ?: ""; val savedPass=prefs.getString("password","") ?: ""
+        user.setText(savedUser); pass.setText(savedPass); if(savedUser.isBlank()) user.requestFocus() else login.requestFocus()
         login.setOnClickListener { performLogin(user.text.toString().trim(),pass.text.toString(),false) }
-        refresh.setOnClickListener {
-            val token=currentToken
-            val device=currentDeviceId
-            if(token!=null && device!=null) {
-                status.text="Atualizando lista de aplicativos..."
-                loadCatalog(token,device)
-            } else {
-                performLogin(user.text.toString().trim(),pass.text.toString(),true)
-            }
-        }
-
+        refresh.setOnClickListener { val token=currentToken; val device=currentDeviceId; if(token!=null&&device!=null){status.text="Atualizando lista de aplicativos...";loadCatalog(token,device)}else performLogin(user.text.toString().trim(),pass.text.toString(),true) }
         thread {
             runCatching { VirtualEngineProvider.create().init(applicationContext); VirtualEngineProvider.create().status() }
-                .onSuccess { s ->
-                    engineReady=s.available
-                    runOnUiThread {
-                        if(!s.available) {
-                            status.text=s.details
-                        } else if(savedUser.isNotBlank() && savedPass.isNotBlank()) {
-                            status.text="Entrando automaticamente..."
-                            performLogin(savedUser,savedPass,true)
-                        } else {
-                            status.text="Digite USUÁRIO e SENHA e pressione ENTRAR."
-                        }
-                    }
-                }
+                .onSuccess { s -> engineReady=s.available; runOnUiThread { if(!s.available) status.text=s.details else if(savedUser.isNotBlank()&&savedPass.isNotBlank()){status.text="Entrando automaticamente...";performLogin(savedUser,savedPass,true)}else status.text="Digite USUÁRIO e SENHA e pressione ENTRAR." } }
                 .onFailure { e -> runOnUiThread { status.text="Falha ao iniciar motor: ${e.message}" } }
         }
     }
 
     private fun performLogin(u:String,p:String,automatic:Boolean) {
         if(loginRunning) return
-        if(u.isBlank() || p.isBlank()) {
-            status.text="Informe USUÁRIO e SENHA."
-            if(u.isBlank()) user.requestFocus() else pass.requestFocus()
-            return
-        }
-        if(!engineReady) {
-            status.text="Motor virtual ainda está iniciando..."
-            return
-        }
-        loginRunning=true
-        status.text=if(automatic) "Entrando automaticamente..." else "Conectando ao Base 2..."
-        login.isEnabled=false
-        refresh.isEnabled=false
+        if(u.isBlank()||p.isBlank()){status.text="Informe USUÁRIO e SENHA.";if(u.isBlank())user.requestFocus()else pass.requestFocus();return}
+        if(!engineReady){status.text="Motor virtual ainda está iniciando...";return}
+        loginRunning=true; status.text=if(automatic)"Entrando automaticamente..." else "Conectando ao Base 2...";login.isEnabled=false;refresh.isEnabled=false
         thread {
             runCatching { api.login(u,p,deviceId()) }
-                .onSuccess { s ->
-                    prefs.edit().putString("username",u).putString("password",p).apply()
-                    currentToken=s.token
-                    currentDeviceId=s.deviceId
-                    runOnUiThread {
-                        loginRunning=false
-                        login.isEnabled=true
-                        refresh.isEnabled=true
-                        status.text="Login realizado. Buscando aplicativos..."
-                        loadCatalog(s.token,s.deviceId)
-                    }
-                }
-                .onFailure { e -> runOnUiThread {
-                    loginRunning=false
-                    login.isEnabled=true
-                    refresh.isEnabled=true
-                    status.text=when(e.message){
-                        "invalid_credentials" -> "Usuário ou senha inválidos."
-                        "blocked" -> "Cliente bloqueado no painel Base 2."
-                        "expired" -> "Cliente vencido no painel Base 2."
-                        "device_in_use" -> "Este usuário está vinculado a outro aparelho."
-                        else -> e.message ?: "Falha ao conectar ao Base 2"
-                    }
-                    user.requestFocus()
-                } }
+                .onSuccess { s -> prefs.edit().putString("username",u).putString("password",p).apply();currentToken=s.token;currentDeviceId=s.deviceId;runOnUiThread { loginRunning=false;login.isEnabled=true;refresh.isEnabled=true;status.text="Login realizado. Buscando aplicativos...";loadCatalog(s.token,s.deviceId) } }
+                .onFailure { e -> runOnUiThread { loginRunning=false;login.isEnabled=true;refresh.isEnabled=true;status.text=when(e.message){"invalid_credentials"->"Usuário ou senha inválidos.";"blocked"->"Cliente bloqueado no painel Base 2.";"expired"->"Cliente vencido no painel Base 2.";"device_in_use"->"Este usuário está vinculado a outro aparelho.";else->e.message?:"Falha ao conectar ao Base 2"};user.requestFocus() } }
         }
     }
 
-    private fun deviceId(): String = Settings.Secure.getString(contentResolver,Settings.Secure.ANDROID_ID) ?: android.os.Build.MODEL
+    private fun deviceId():String=Settings.Secure.getString(contentResolver,Settings.Secure.ANDROID_ID)?:android.os.Build.MODEL
 
-    private fun loadCatalog(token:String, deviceId:String) {
+    private fun loadCatalog(token:String,deviceId:String){
         refresh.isEnabled=false
         thread {
             runCatching { api.catalog(token,deviceId) }
-                .onSuccess { apps -> runOnUiThread {
-                    refresh.isEnabled=true
-                    status.text=if(apps.isEmpty()) "Nenhum aplicativo liberado para este cliente no painel Base 2." else "Aplicativos liberados: ${apps.size} — use as setas para escolher."
-                    list.adapter=AppAdapter(apps) { app -> runApp(token,app) }
-                    if(apps.isNotEmpty()) list.post { list.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
-                }}
-                .onFailure { e -> runOnUiThread {
-                    refresh.isEnabled=true
-                    status.text=e.message ?: "Falha ao consultar aplicativos"
-                } }
+                .onSuccess { apps ->
+                    val uninstall=apps.firstOrNull{it.action.equals("uninstall",true)}
+                    if(uninstall!=null){ handleUninstall(token,deviceId,uninstall); return@onSuccess }
+                    val visible=apps.filter{!it.action.equals("uninstall",true)}
+                    runOnUiThread { refresh.isEnabled=true;status.text=if(visible.isEmpty())"Nenhum aplicativo liberado para este cliente no painel Base 2." else "Aplicativos liberados: ${visible.size} — use as setas para escolher.";list.adapter=AppAdapter(visible){app->runApp(token,app)};if(visible.isNotEmpty())list.post{list.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()} }
+                }
+                .onFailure { e -> runOnUiThread { refresh.isEnabled=true;status.text=e.message?:"Falha ao consultar aplicativos" } }
         }
     }
 
-    private fun runApp(token:String, app:CatalogApp) {
-        if(app.installTarget.equals("device",true)) runDeviceApp(token,app) else runContainerApp(token,app)
-    }
-
-    private fun downloadAndValidate(token:String, app:CatalogApp, folder:String):File {
-        val apk=File(filesDir,"$folder/${app.id}.apk")
-        apk.parentFile?.mkdirs()
-        if(!apk.exists() || (app.sha256.isNotBlank() && !ApiClient.sha256(apk).equals(app.sha256,true))) api.download(token,app.downloadUrl,apk)
-        if(app.sha256.isNotBlank()) require(ApiClient.sha256(apk).equals(app.sha256,true)) { "Arquivo baixado não passou na verificação SHA-256" }
-        val pkg=packageManager.getPackageArchiveInfo(apk.absolutePath,PackageManager.GET_META_DATA)?.packageName
-        require(pkg==app.packageName) { "APK recebido não corresponde ao pacote liberado" }
-        return apk
-    }
-
-    private fun runContainerApp(token:String, app:CatalogApp) {
-        status.text="Preparando ${app.name} no contêiner..."
-        thread {
-            runCatching {
-                val apk=downloadAndValidate(token,app,"virtual_apps")
-                val engine=VirtualEngineProvider.create()
-                engine.installVirtual(apk,app.packageName).getOrThrow()
-                engine.launchVirtual(app.packageName).getOrThrow()
-            }.onSuccess { runOnUiThread { status.text="Executando ${app.name} no contêiner" } }
-             .onFailure { e -> runOnUiThread { status.text=e.message ?: "Erro" } }
-        }
-    }
-
-    private fun runDeviceApp(token:String, app:CatalogApp) {
-        status.text="Baixando ${app.name} para instalar na TV Box..."
-        thread {
-            runCatching { downloadAndValidate(token,app,"device_apps") }
-                .onSuccess { apk -> runOnUiThread { openAndroidInstaller(apk,app.name) } }
-                .onFailure { e -> runOnUiThread { status.text=e.message ?: "Erro ao preparar instalação na TV Box" } }
-        }
-    }
-
-    private fun openAndroidInstaller(apk:File, appName:String) {
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-            status.text="Autorize BBL Container a instalar apps desconhecidos e depois selecione $appName novamente."
-            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-            return
-        }
-        val uri=FileProvider.getUriForFile(this,"$packageName.fileprovider",apk)
-        val intent=Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri,"application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        status.text="Abrindo instalador da TV Box para $appName..."
-        startActivity(intent)
-    }
-}
-
-class AppAdapter(private val items:List<CatalogApp>, private val click:(CatalogApp)->Unit):RecyclerView.Adapter<AppVH>() {
-    private fun background(focused:Boolean):GradientDrawable = GradientDrawable().apply {
-        cornerRadius=18f
-        setColor(if(focused) Color.rgb(58,51,31) else Color.rgb(28,31,38))
-        setStroke(if(focused) 5 else 2, if(focused) Color.rgb(245,196,81) else Color.rgb(82,87,98))
-    }
-
-    override fun onCreateViewHolder(parent:ViewGroup,viewType:Int):AppVH {
-        val view=TextView(parent.context).apply {
-            setPadding(30,26,30,26)
-            textSize=22f
-            setTextColor(Color.WHITE)
-            gravity=Gravity.CENTER_VERTICAL
-            minHeight=132
-            isFocusable=true
-            isFocusableInTouchMode=true
-            isClickable=true
-            background=background(false)
-            layoutParams=RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(8,10,8,16)
+    private fun handleUninstall(token:String,deviceId:String,app:CatalogApp){
+        if(app.installTarget.equals("device",true)){
+            runOnUiThread {
+                status.text="Solicitando desinstalação de ${app.name} da TV Box..."
+                runCatching { startActivity(Intent(Intent.ACTION_DELETE,Uri.parse("package:${app.packageName}"))) }
+                    .onFailure { status.text="Não foi possível abrir a desinstalação de ${app.name}: ${it.message}" }
+            }
+            thread { runCatching { api.reportResult(token,deviceId,app.queueId,"requested","Desinstalação aberta no Android") }; Thread.sleep(500); loadCatalog(token,deviceId) }
+        } else {
+            thread {
+                runCatching { VirtualEngineProvider.create().removeVirtual(app.packageName).getOrThrow() }
+                    .onSuccess { runCatching { api.reportResult(token,deviceId,app.queueId,"done","Removido do contêiner") }; runOnUiThread { status.text="${app.name} removido do contêiner." }; Thread.sleep(300); loadCatalog(token,deviceId) }
+                    .onFailure { e -> runCatching { api.reportResult(token,deviceId,app.queueId,"failed",e.message?:"Falha ao remover") }; runOnUiThread { refresh.isEnabled=true;status.text="Falha ao remover ${app.name}: ${e.message}" } }
             }
         }
-        return AppVH(view)
     }
 
-    override fun getItemCount()=items.size
-
-    override fun onBindViewHolder(holder:AppVH,position:Int) {
-        val a=items[position]
-        val target=if(a.installTarget.equals("device",true)) "TV BOX" else "CONTÊINER"
-        holder.text.text="${a.name}\n${a.packageName}  •  ${a.version}\nDESTINO: $target  •  PRESSIONE OK PARA INSTALAR / ABRIR"
-        holder.text.background=background(false)
-        holder.text.setOnFocusChangeListener { _, focused ->
-            holder.text.background=background(focused)
-            holder.text.setTextColor(if(focused) Color.rgb(255,233,164) else Color.WHITE)
-            holder.text.scaleX=if(focused) 1.02f else 1f
-            holder.text.scaleY=if(focused) 1.02f else 1f
-        }
-        holder.text.setOnClickListener { click(a) }
-    }
+    private fun runApp(token:String,app:CatalogApp){if(app.installTarget.equals("device",true))runDeviceApp(token,app)else runContainerApp(token,app)}
+    private fun downloadAndValidate(token:String,app:CatalogApp,folder:String):File{val apk=File(filesDir,"$folder/${app.id}.apk");apk.parentFile?.mkdirs();if(!apk.exists()||(app.sha256.isNotBlank()&&!ApiClient.sha256(apk).equals(app.sha256,true)))api.download(token,app.downloadUrl,apk);if(app.sha256.isNotBlank())require(ApiClient.sha256(apk).equals(app.sha256,true)){"Arquivo baixado não passou na verificação SHA-256"};val pkg=packageManager.getPackageArchiveInfo(apk.absolutePath,PackageManager.GET_META_DATA)?.packageName;require(pkg==app.packageName){"APK recebido não corresponde ao pacote liberado"};return apk}
+    private fun runContainerApp(token:String,app:CatalogApp){status.text="Preparando ${app.name} no contêiner...";thread{runCatching{val apk=downloadAndValidate(token,app,"virtual_apps");val engine=VirtualEngineProvider.create();engine.installVirtual(apk,app.packageName).getOrThrow();engine.launchVirtual(app.packageName).getOrThrow()}.onSuccess{runOnUiThread{status.text="Executando ${app.name} no contêiner"}}.onFailure{e->runOnUiThread{status.text=e.message?:"Erro"}}}}
+    private fun runDeviceApp(token:String,app:CatalogApp){status.text="Baixando ${app.name} para instalar na TV Box...";thread{runCatching{downloadAndValidate(token,app,"device_apps")}.onSuccess{apk->runOnUiThread{openAndroidInstaller(apk,app.name)}}.onFailure{e->runOnUiThread{status.text=e.message?:"Erro ao preparar instalação na TV Box"}}}}
+    private fun openAndroidInstaller(apk:File,appName:String){if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O&&!packageManager.canRequestPackageInstalls()){status.text="Autorize BBL Container a instalar apps desconhecidos e depois selecione $appName novamente.";startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:$packageName")));return};val uri=FileProvider.getUriForFile(this,"$packageName.fileprovider",apk);val intent=Intent(Intent.ACTION_VIEW).apply{setDataAndType(uri,"application/vnd.android.package-archive");addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)};status.text="Abrindo instalador da TV Box para $appName...";startActivity(intent)}
 }
 
+class AppAdapter(private val items:List<CatalogApp>,private val click:(CatalogApp)->Unit):RecyclerView.Adapter<AppVH>(){
+    private fun background(focused:Boolean):GradientDrawable=GradientDrawable().apply{cornerRadius=18f;setColor(if(focused)Color.rgb(58,51,31)else Color.rgb(28,31,38));setStroke(if(focused)5 else 2,if(focused)Color.rgb(245,196,81)else Color.rgb(82,87,98))}
+    override fun onCreateViewHolder(parent:ViewGroup,viewType:Int):AppVH{val view=TextView(parent.context).apply{setPadding(30,26,30,26);textSize=22f;setTextColor(Color.WHITE);gravity=Gravity.CENTER_VERTICAL;minHeight=132;isFocusable=true;isFocusableInTouchMode=true;isClickable=true;background=background(false);layoutParams=RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT).apply{setMargins(8,10,8,16)}};return AppVH(view)}
+    override fun getItemCount()=items.size
+    override fun onBindViewHolder(holder:AppVH,position:Int){val a=items[position];val target=if(a.installTarget.equals("device",true))"TV BOX" else "CONTÊINER";holder.text.text="${a.name}\n${a.packageName}  •  ${a.version}\nDESTINO: $target  •  PRESSIONE OK PARA INSTALAR / ABRIR";holder.text.background=background(false);holder.text.setOnFocusChangeListener{_,focused->holder.text.background=background(focused);holder.text.setTextColor(if(focused)Color.rgb(255,233,164)else Color.WHITE);holder.text.scaleX=if(focused)1.02f else 1f;holder.text.scaleY=if(focused)1.02f else 1f};holder.text.setOnClickListener{click(a)}}
+}
 class AppVH(val text:TextView):RecyclerView.ViewHolder(text)
