@@ -17,13 +17,13 @@ jobs:
       - name: Install host build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libncurses-dev make wget xz-utils git perl python3 file
+          sudo apt-get install -y bc bison flex libssl-dev libncurses-dev make wget unzip git perl python3 file
 
-      - name: Install Linaro GCC 4.9 aarch64 toolchain
+      - name: Install Android NDK r17c GCC 4.9 aarch64 toolchain
         run: |
-          wget -q https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu.tar.xz -O /tmp/gcc.tar.xz
-          tar -xf /tmp/gcc.tar.xz -C "$GITHUB_WORKSPACE"
-          echo "$GITHUB_WORKSPACE/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin" >> "$GITHUB_PATH"
+          wget -q https://dl.google.com/android/repository/android-ndk-r17c-linux-x86_64.zip -O /tmp/ndk.zip
+          unzip -q /tmp/ndk.zip -d "$GITHUB_WORKSPACE"
+          echo "$GITHUB_WORKSPACE/android-ndk-r17c/toolchains/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
 
       - name: Fetch Amlogic 3.14 kernel
         run: |
@@ -32,7 +32,7 @@ jobs:
       - name: Prepare kernel configuration
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-android-
           cd kernel
           make meson64_defconfig
           if [ -x scripts/config ]; then
@@ -66,9 +66,9 @@ jobs:
       - name: Build RTL8733BS module
         run: |
           export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-android-
           DRV="$GITHUB_WORKSPACE/driver-src/osdrv/extdrv/wireless/rtl8733bs"
-          make -C "$DRV" KSRC="$GITHUB_WORKSPACE/kernel" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 V=1 2>&1 | tee "$GITHUB_WORKSPACE/rtl8733bs-build.log"
+          make -C "$DRV" KSRC="$GITHUB_WORKSPACE/kernel" ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- -j2 V=1 2>&1 | tee "$GITHUB_WORKSPACE/rtl8733bs-build.log"
           find "$DRV" -name '*.ko' -print -exec file {} \;
           KO=$(find "$DRV" \( -name '8733bs.ko' -o -name 'rtl8733bs.ko' \) | head -1)
           test -n "$KO"
