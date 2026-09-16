@@ -14,6 +14,7 @@ import v5_base2_legacy_panel
 import v5
 import v5_tudo_liberado_integration
 import v5_base2_client_apps_manage
+import v5_launcher_v4_theme
 
 
 def _seed_reseller_admin():
