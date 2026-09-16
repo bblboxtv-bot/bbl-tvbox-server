@@ -5,7 +5,15 @@ import android.app.*;import android.os.*;import android.provider.Settings;import
 public class MainActivity extends Activity{
  FrameLayout root; SharedPreferences prefs; final int BW=1672,BH=941;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("slots",0);build();}
- void build(){root=new FrameLayout(this);ImageView bg=new ImageView(this);bg.setImageResource(R.drawable.launcher_bg);bg.setScaleType(ImageView.ScaleType.FIT_XY);root.addView(bg,new FrameLayout.LayoutParams(-1,-1));setContentView(root);root.post(()->layoutUI());}
+ void build(){
+  root=new FrameLayout(this);
+  root.setBackgroundColor(Color.BLACK);
+  root.setLayerType(View.LAYER_TYPE_SOFTWARE,null);
+  root.setBackgroundResource(R.drawable.launcher_bg);
+  Drawable d=root.getBackground();if(d!=null){d.setDither(true);}
+  setContentView(root);
+  root.post(()->layoutUI());
+ }
  int X(int v){return Math.round(v*root.getWidth()/(float)BW);} int Y(int v){return Math.round(v*root.getHeight()/(float)BH);}
  GradientDrawable focusBg(boolean on){GradientDrawable g=new GradientDrawable();g.setColor(on?Color.argb(80,0,180,255):Color.TRANSPARENT);g.setCornerRadius(Y(18));g.setStroke(on?Y(4):Y(1),on?Color.CYAN:Color.TRANSPARENT);return g;}
  View zone(int x,int y,int w,int h,Runnable r){FrameLayout v=new FrameLayout(this);v.setFocusable(true);v.setBackground(focusBg(false));v.setOnFocusChangeListener((a,on)->{a.setBackground(focusBg(on));a.animate().scaleX(on?1.025f:1f).scaleY(on?1.025f:1f).setDuration(100).start();});v.setOnClickListener(a->r.run());FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(v,p);return v;}
@@ -13,7 +21,7 @@ public class MainActivity extends Activity{
   zone(1126,114,187,55,()->openSettings());zone(1320,114,138,55,()->openWifi());zone(1467,114,153,55,()->openSupport());
   zone(1017,180,296,428,()->launchPreferred("unitv free","unitv"));zone(1323,180,296,428,()->launchPreferred("tudo liberado","tudo"));
   int[] xs={31,297,562,827,1093};for(int i=0;i<5;i++)addSlot(i,xs[i],630,257,207);zone(1359,630,258,207,()->showAllApps());
-  View first=root.getChildAt(1);if(first!=null)first.requestFocus();
+  View first=root.getChildAt(0);if(first!=null)first.requestFocus();
  }
  void addSlot(int idx,int x,int y,int w,int h){String pkg=prefs.getString("slot"+idx,"");FrameLayout box=new FrameLayout(this);box.setFocusable(true);box.setBackground(focusBg(false));FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);box.setOnFocusChangeListener((v,on)->{v.setBackground(focusBg(on));v.animate().scaleX(on?1.03f:1f).scaleY(on?1.03f:1f).setDuration(100).start();});if(pkg.length()>0)fillSlot(box,pkg);box.setOnClickListener(v->{String cur=prefs.getString("slot"+idx,"");if(cur.length()==0)pickApp(idx);else launchPackage(cur);});box.setOnLongClickListener(v->{slotOptions(idx);return true;});}
  void fillSlot(FrameLayout box,String pkg){try{PackageManager pm=getPackageManager();ApplicationInfo ai=pm.getApplicationInfo(pkg,0);GradientDrawable gd=new GradientDrawable();gd.setColor(Color.argb(210,10,15,48));gd.setCornerRadius(Y(18));box.setBackground(gd);LinearLayout ll=new LinearLayout(this);ll.setOrientation(LinearLayout.VERTICAL);ll.setGravity(Gravity.CENTER);ImageView iv=new ImageView(this);iv.setImageDrawable(pm.getApplicationIcon(pkg));iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);TextView tv=new TextView(this);tv.setText(pm.getApplicationLabel(ai));tv.setTextColor(Color.WHITE);tv.setTextSize(16);tv.setGravity(Gravity.CENTER);ll.addView(iv,new LinearLayout.LayoutParams(X(110),0,1));ll.addView(tv,new LinearLayout.LayoutParams(-1,Y(42)));box.addView(ll,new FrameLayout.LayoutParams(-1,-1));}catch(Exception e){}}
