@@ -15,6 +15,7 @@ import v5
 import v5_tudo_liberado_integration
 import v5_base2_client_apps_manage
 import v5_launcher_v4_theme
+import v5_activation_code_panel
 
 
 def _seed_reseller_admin():
