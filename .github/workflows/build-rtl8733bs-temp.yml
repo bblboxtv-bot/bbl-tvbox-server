@@ -34,6 +34,9 @@ jobs:
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
           cd kernel
+          # Old 3.14 dtc sources need this with modern host GCC/binutils.
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
           make meson64_defconfig
           if [ -x scripts/config ]; then
             scripts/config --enable SMP
@@ -45,12 +48,13 @@ jobs:
             scripts/config --module MAC80211
             scripts/config --set-str LOCALVERSION ""
             scripts/config --disable LOCALVERSION_AUTO
+            scripts/config --set-str SYSTEM_TRUSTED_KEYS ""
           else
             sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=""/' .config
             sed -i 's/^CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' .config
           fi
-          yes '' | make oldconfig
-          make -j2 Image modules
+          yes '' | make oldconfig || true
+          make -j2 prepare scripts modules_prepare
           echo "Kernel release: $(make -s kernelrelease)"
 
       - name: Fetch RTL8733BS vendor driver
