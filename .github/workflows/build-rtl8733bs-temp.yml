@@ -1,0 +1,87 @@
+name: Build RTL8733BS for BBL S905L
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-rtl8733bs-temp.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout helper repo
+        uses: actions/checkout@v4
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libncurses5-dev make wget xz-utils git perl python3
+
+      - name: Install Linaro GCC 4.9 aarch64 toolchain
+        run: |
+          wget -q https://releases.linaro.org/components/toolchain/binaries/4.9-2016.02/aarch64-linux-gnu/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu.tar.xz -O /tmp/gcc.tar.xz
+          tar -xf /tmp/gcc.tar.xz -C "$GITHUB_WORKSPACE"
+          echo "$GITHUB_WORKSPACE/gcc-linaro-4.9-2016.02-x86_64_aarch64-linux-gnu/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch Amlogic 3.14 kernel
+        run: |
+          git clone --depth 1 --branch amlogic-3.14-nougat https://github.com/kszaq/linux-amlogic-le.git kernel
+
+      - name: Prepare kernel configuration
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          cd kernel
+          make meson64_defconfig
+          if [ -x scripts/config ]; then
+            scripts/config --enable SMP
+            scripts/config --enable PREEMPT
+            scripts/config --enable MODULES
+            scripts/config --enable MODULE_UNLOAD
+            scripts/config --disable MODVERSIONS
+            scripts/config --module CFG80211
+            scripts/config --module MAC80211
+            scripts/config --set-str LOCALVERSION ""
+            scripts/config --disable LOCALVERSION_AUTO
+          else
+            sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=""/' .config
+            sed -i 's/^CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' .config
+          fi
+          yes '' | make oldconfig
+          make -j2 Image modules
+          echo "Kernel release: $(make -s kernelrelease)"
+
+      - name: Fetch RTL8733BS vendor driver
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/sipeed/LicheeRV-Nano-Build.git driver-src
+          cd driver-src
+          git sparse-checkout set osdrv/extdrv/wireless/rtl8733bs
+          cd osdrv/extdrv/wireless/rtl8733bs
+          sed -i 's/^CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/' Makefile
+          sed -i 's/^CONFIG_PLATFORM_AML_S905 = n/CONFIG_PLATFORM_AML_S905 = y/' Makefile
+          sed -i 's/^CONFIG_RTW_ANDROID = 0/CONFIG_RTW_ANDROID = 7/' Makefile
+
+      - name: Build RTL8733BS module
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          DRV="$GITHUB_WORKSPACE/driver-src/osdrv/extdrv/wireless/rtl8733bs"
+          make -C "$DRV" KSRC="$GITHUB_WORKSPACE/kernel" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 V=1 2>&1 | tee "$GITHUB_WORKSPACE/rtl8733bs-build.log"
+          find "$DRV" -name '*.ko' -print -exec file {} \;
+          KO=$(find "$DRV" -name '8733bs.ko' -o -name 'rtl8733bs.ko' | head -1)
+          test -n "$KO"
+          cp "$KO" "$GITHUB_WORKSPACE/8733bs.ko"
+          strings "$GITHUB_WORKSPACE/8733bs.ko" | grep -E '^vermagic=|^name=|^depends=' | tee "$GITHUB_WORKSPACE/rtl8733bs-module-info.txt" || true
+          sha256sum "$GITHUB_WORKSPACE/8733bs.ko" | tee -a "$GITHUB_WORKSPACE/rtl8733bs-module-info.txt"
+
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl8733bs-s905l-kernel-3.14.29
+          path: |
+            8733bs.ko
+            rtl8733bs-module-info.txt
+            rtl8733bs-build.log
+          if-no-files-found: error
