@@ -1,0 +1,24 @@
+name: Build BBL Launcher V4
+on:
+  push:
+    branches: [rom-v4-launcher-build]
+    paths: ['launcher-v4/**','.github/workflows/build-launcher-v4.yml']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - run: cd launcher-v4 && gradle :app:assembleDebug --no-daemon
+      - run: cp launcher-v4/app/build/outputs/apk/debug/app-debug.apk BBL_BOXTV_LAUNCHER_V4_TEST.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BBL_BOXTV_LAUNCHER_V4_TEST
+          path: BBL_BOXTV_LAUNCHER_V4_TEST.apk
