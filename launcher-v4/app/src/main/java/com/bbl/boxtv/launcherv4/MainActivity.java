@@ -66,9 +66,9 @@ public class MainActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
         LinearLayout base=new LinearLayout(this);base.setOrientation(LinearLayout.VERTICAL);base.setGravity(Gravity.CENTER);base.setPadding(90,45,90,45);
         GradientDrawable bg=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{Color.rgb(1,4,16),Color.rgb(15,13,54),Color.rgb(55,5,15),Color.BLACK});base.setBackground(bg);
-        TextView logo=txt("BBL.BOX TV",46,Gravity.CENTER);logo.setTypeface(null,1);logo.setTextColor(Color.rgb(255,185,70));base.addView(logo,new LinearLayout.LayoutParams(-1,85));
-        TextView sub=txt("TUDO LIBERADO • ACESSO BBL",22,Gravity.CENTER);sub.setTypeface(null,1);base.addView(sub,new LinearLayout.LayoutParams(-1,52));
-        TextView help=txt("Entre com o usuario e a senha cadastrados no seu painel BBL.",16,Gravity.CENTER);base.addView(help,new LinearLayout.LayoutParams(-1,55));
+        TextView logo=txt("TUDO LIBERADO",48,Gravity.CENTER);logo.setTypeface(null,1);logo.setTextColor(Color.rgb(255,185,70));base.addView(logo,new LinearLayout.LayoutParams(-1,85));
+        TextView sub=txt("BBL.BOXTV • LAUNCHER",20,Gravity.CENTER);sub.setTypeface(null,1);base.addView(sub,new LinearLayout.LayoutParams(-1,52));
+        TextView help=txt("Acesse com usuario e senha cadastrados no painel BBL.BOXTV.",16,Gravity.CENTER);base.addView(help,new LinearLayout.LayoutParams(-1,55));
 
         EditText user=new EditText(this);user.setHint("Usuario");user.setSingleLine(true);user.setTextColor(Color.WHITE);user.setHintTextColor(Color.LTGRAY);user.setTextSize(20);user.setGravity(Gravity.CENTER);user.setBackground(panel(Color.argb(210,8,16,45),Color.CYAN,2,14));
         LinearLayout.LayoutParams up=new LinearLayout.LayoutParams(600,68);up.setMargins(0,8,0,12);base.addView(user,up);
@@ -123,8 +123,8 @@ public class MainActivity extends Activity {
     }
 
     void layoutUI(){
-        TextView logo=txt("BBL.BOX TV",34,Gravity.CENTER);logo.setTypeface(null,1);logo.setTextColor(Color.rgb(255,185,70));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(X(420),Y(54));lp.leftMargin=X(430);lp.topMargin=Y(12);root.addView(logo,lp);
-        TextView sl=txt("O MELHOR DO ENTRETENIMENTO EM UM SO LUGAR",12,Gravity.CENTER);FrameLayout.LayoutParams slp=new FrameLayout.LayoutParams(X(500),Y(28));slp.leftMargin=X(390);slp.topMargin=Y(58);root.addView(sl,slp);
+        TextView logo=txt("TUDO LIBERADO",34,Gravity.CENTER);logo.setTypeface(null,1);logo.setTextColor(Color.rgb(255,185,70));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(X(420),Y(54));lp.leftMargin=X(430);lp.topMargin=Y(12);root.addView(logo,lp);
+        TextView sl=txt("BBL.BOXTV • O MELHOR DO ENTRETENIMENTO EM UM SO LUGAR",12,Gravity.CENTER);FrameLayout.LayoutParams slp=new FrameLayout.LayoutParams(X(500),Y(28));slp.leftMargin=X(390);slp.topMargin=Y(58);root.addView(sl,slp);
         clock=txt("",28,Gravity.RIGHT|Gravity.CENTER_VERTICAL);clock.setTypeface(null,1);FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(X(175),Y(42));cp.leftMargin=X(1080);cp.topMargin=Y(10);root.addView(clock,cp);
         date=txt("",12,Gravity.RIGHT|Gravity.CENTER_VERTICAL);FrameLayout.LayoutParams dp=new FrameLayout.LayoutParams(X(260),Y(28));dp.leftMargin=X(995);dp.topMargin=Y(48);root.addView(date,dp);startClock();
         addTop("Configuracoes",820,82,128,42,()->openSettings());addTop("Wi-Fi",956,82,92,42,()->openWifi());addTop("Suporte",1056,82,98,42,()->openSupport());addTop("Sair",1162,82,92,42,()->logout());
