@@ -18,8 +18,8 @@ jobs:
       - run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
       - run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - run: cd launcher-v4 && gradle :app:assembleDebug --no-daemon
-      - run: cp launcher-v4/app/build/outputs/apk/debug/app-debug.apk BBL_BOXTV_LAUNCHER_V4_TEST.apk
+      - run: cp launcher-v4/app/build/outputs/apk/debug/app-debug.apk TUDO_LIBERADO_BBL_TELALAUNCHER.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: BBL_BOXTV_LAUNCHER_V4_TEST
-          path: BBL_BOXTV_LAUNCHER_V4_TEST.apk
+          name: TUDO_LIBERADO_BBL_TELALAUNCHER
+          path: TUDO_LIBERADO_BBL_TELALAUNCHER.apk
