@@ -15,6 +15,9 @@ import java.util.*;
 import java.net.*;
 import java.io.*;
 import org.json.*;
+import com.google.zxing.*;
+import com.google.zxing.common.*;
+import com.google.zxing.qrcode.*;
 
 public class MainActivity extends Activity {
     FrameLayout root,banner,lockOverlay;
@@ -127,7 +130,7 @@ public class MainActivity extends Activity {
         TextView sl=txt("BBL.BOXTV • O MELHOR DO ENTRETENIMENTO EM UM SO LUGAR",12,Gravity.CENTER);FrameLayout.LayoutParams slp=new FrameLayout.LayoutParams(X(500),Y(28));slp.leftMargin=X(390);slp.topMargin=Y(58);root.addView(sl,slp);
         clock=txt("",28,Gravity.RIGHT|Gravity.CENTER_VERTICAL);clock.setTypeface(null,1);FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(X(175),Y(42));cp.leftMargin=X(1080);cp.topMargin=Y(10);root.addView(clock,cp);
         date=txt("",12,Gravity.RIGHT|Gravity.CENTER_VERTICAL);FrameLayout.LayoutParams dp=new FrameLayout.LayoutParams(X(260),Y(28));dp.leftMargin=X(995);dp.topMargin=Y(48);root.addView(date,dp);startClock();
-        addTop("Configuracoes",820,82,128,42,()->openSettings());addTop("Wi-Fi",956,82,92,42,()->openWifi());addTop("Suporte",1056,82,98,42,()->openSupport());addTop("Sair",1162,82,92,42,()->logout());
+        addTop("Configuracoes",850,82,128,42,()->openSettings());addTop("Wi-Fi",986,82,92,42,()->openWifi());addTop("Suporte",1086,82,168,42,()->openSupport());
 
         banner=new FrameLayout(this);banner.setBackground(panel(Color.argb(178,5,8,18),Color.rgb(80,210,255),2,18));FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(X(775),Y(330));bp.leftMargin=X(24);bp.topMargin=Y(132);root.addView(banner,bp);
         TextView b1=txt("TUDO LIBERADO",52,Gravity.CENTER);b1.setTypeface(null,1);b1.setTextColor(Color.rgb(255,155,40));FrameLayout.LayoutParams b1p=new FrameLayout.LayoutParams(-1,Y(110));b1p.topMargin=Y(52);banner.addView(b1,b1p);
@@ -135,8 +138,8 @@ public class MainActivity extends Activity {
         userText=txt("Cliente: "+prefs.getString("username",""),14,Gravity.CENTER);FrameLayout.LayoutParams usp=new FrameLayout.LayoutParams(-1,Y(38));usp.topMargin=Y(218);banner.addView(userText,usp);
         remoteBanner=new ImageView(this);remoteBanner.setScaleType(ImageView.ScaleType.CENTER_CROP);remoteBanner.setVisibility(View.GONE);banner.addView(remoteBanner,new FrameLayout.LayoutParams(-1,-1));
 
-        addFeature("TUDO LIBERADO","tudo",815,132,215,330);addFeature("UniTV FREE","unitv",1040,132,216,330);
-        int[] xs={24,232,440,648,856};for(int i=0;i<5;i++)addSlot(i,xs[i],486,196,185);addAllApps(1064,486,192,185);
+        addFeature("TUDO LIBERADO","tudo",815,132,215,330);addFeature("UniTV FREE","unitv_free",1040,132,216,330);
+        addFixedApp("AnyDesk","anydesk",24,486,196,185);addFixedApp("RS File Manager","rs file",232,486,196,185);addFixedApp("YOUTUBE","youtube",440,486,196,185);addFixedApp("YouTube Premium","youtube premium",648,486,196,185);addFixedApp("STV FUTEBOL","stv futebol",856,486,196,185);addFixedApp("Tudo Liberado Oculto","oculto",1064,486,192,185);
         createLockOverlay();
     }
 
@@ -167,24 +170,55 @@ public class MainActivity extends Activity {
 
     void addFeature(String label,String key,int x,int y,int w,int h){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setFocusable(true);box.setPadding(X(10),Y(10),X(10),Y(10));box.setBackground(panel(Color.argb(210,9,15,48),Color.rgb(70,215,255),2,18));
-        ResolveInfo r="tudo".equals(key)?resolvePackage(tudoPackage):findApp(key);ImageView iv=new ImageView(this);iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);if(r!=null)iv.setImageDrawable(r.loadIcon(getPackageManager()));else iv.setImageResource(R.drawable.ic_bbl);box.addView(iv,new LinearLayout.LayoutParams(X(135),0,1));TextView tv=txt(label,16,Gravity.CENTER);tv.setTypeface(null,1);box.addView(tv,new LinearLayout.LayoutParams(-1,Y(48)));
-        box.setOnClickListener(v->{if(blocked)return;if("tudo".equals(key))launchTudo();else launchPreferred(key);});box.setOnFocusChangeListener((v,on)->{v.setScaleX(on?1.04f:1);v.setScaleY(on?1.04f:1);v.setBackground(panel(on?Color.argb(230,8,70,140):Color.argb(210,9,15,48),on?Color.CYAN:Color.rgb(70,215,255),on?4:2,18));});FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);
+        ResolveInfo r="tudo".equals(key)?resolvePackage(tudoPackage):("unitv_free".equals(key)?findFirstByLabels("UniTV Free","UniTV FREE","UniTVFree"):findApp(key));ImageView iv=new ImageView(this);iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);if(r!=null)iv.setImageDrawable(r.loadIcon(getPackageManager()));else iv.setImageResource(R.drawable.ic_bbl);box.addView(iv,new LinearLayout.LayoutParams(X(135),0,1));TextView tv=txt(label,16,Gravity.CENTER);tv.setTypeface(null,1);box.addView(tv,new LinearLayout.LayoutParams(-1,Y(48)));
+        box.setOnClickListener(v->{if(blocked)return;if("tudo".equals(key))launchTudo();else if("unitv_free".equals(key))launchUniTVFree();else launchPreferred(key);});box.setOnFocusChangeListener((v,on)->{v.setScaleX(on?1.04f:1);v.setScaleY(on?1.04f:1);v.setBackground(panel(on?Color.argb(230,8,70,140):Color.argb(210,9,15,48),on?Color.CYAN:Color.rgb(70,215,255),on?4:2,18));});FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);
     }
 
     void addSlot(int idx,int x,int y,int w,int h){String pkg=prefs.getString("slot"+idx,"");FrameLayout box=new FrameLayout(this);box.setFocusable(true);box.setBackground(panel(Color.argb(205,10,14,45),Color.rgb(70,130,255),2,16));FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);if(pkg.length()>0&&isInstalled(pkg))fillSlot(box,pkg);else{TextView plus=txt("+",58,Gravity.CENTER);plus.setTypeface(null,1);box.addView(plus,new FrameLayout.LayoutParams(-1,-1));}box.setOnClickListener(v->{if(blocked)return;String cur=prefs.getString("slot"+idx,"");if(cur.length()==0||!isInstalled(cur))pickApp(idx);else launchPackage(cur);});box.setOnLongClickListener(v->{if(!blocked)slotOptions(idx);return true;});box.setOnFocusChangeListener((v,on)->{v.setScaleX(on?1.05f:1);v.setScaleY(on?1.05f:1);v.setBackground(panel(on?Color.argb(235,8,65,125):Color.argb(205,10,14,45),on?Color.CYAN:Color.rgb(70,130,255),on?4:2,16));});}
     void fillSlot(FrameLayout box,String pkg){try{PackageManager pm=getPackageManager();ApplicationInfo ai=pm.getApplicationInfo(pkg,0);LinearLayout ll=new LinearLayout(this);ll.setOrientation(LinearLayout.VERTICAL);ll.setGravity(Gravity.CENTER);ImageView iv=new ImageView(this);iv.setImageDrawable(pm.getApplicationIcon(pkg));iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);TextView tv=txt(pm.getApplicationLabel(ai).toString(),14,Gravity.CENTER);ll.addView(iv,new LinearLayout.LayoutParams(X(92),0,1));ll.addView(tv,new LinearLayout.LayoutParams(-1,Y(40)));box.addView(ll,new FrameLayout.LayoutParams(-1,-1));}catch(Exception e){}}
+
+    void addFixedApp(String label,String key,int x,int y,int w,int h){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setFocusable(true);box.setPadding(X(8),Y(8),X(8),Y(8));box.setBackground(panel(Color.argb(205,10,14,45),Color.rgb(70,130,255),2,16));
+        ResolveInfo r=findFirstByLabels(label,key);
+        ImageView iv=new ImageView(this);iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        if(r!=null)iv.setImageDrawable(r.loadIcon(getPackageManager()));else iv.setImageResource(R.drawable.ic_bbl);
+        box.addView(iv,new LinearLayout.LayoutParams(X(105),0,1));
+        TextView tv=txt(label,13,Gravity.CENTER);tv.setTypeface(null,1);box.addView(tv,new LinearLayout.LayoutParams(-1,Y(42)));
+        box.setOnClickListener(v->{if(blocked)return;ResolveInfo app=findFirstByLabels(label,key);if(app!=null)launchRaw(app.activityInfo.packageName);else Toast.makeText(this,label+" nao instalado",Toast.LENGTH_SHORT).show();});
+        box.setOnFocusChangeListener((v,on)->{v.setScaleX(on?1.05f:1);v.setScaleY(on?1.05f:1);v.setBackground(panel(on?Color.argb(235,8,65,125):Color.argb(205,10,14,45),on?Color.CYAN:Color.rgb(70,130,255),on?4:2,16));});
+        FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);
+    }
 
     void addAllApps(int x,int y,int w,int h){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setFocusable(true);box.setBackground(panel(Color.argb(205,10,14,45),Color.rgb(70,130,255),2,16));TextView icon=txt("[ ] [ ]\n[ ] [ ]",28,Gravity.CENTER);TextView label=txt("Meus Apps",16,Gravity.CENTER);box.addView(icon,new LinearLayout.LayoutParams(-1,0,1));box.addView(label,new LinearLayout.LayoutParams(-1,Y(48)));box.setOnClickListener(v->{if(!blocked)showAllApps();});box.setOnFocusChangeListener((v,on)->{v.setScaleX(on?1.05f:1);v.setScaleY(on?1.05f:1);v.setBackground(panel(on?Color.argb(235,8,65,125):Color.argb(205,10,14,45),on?Color.CYAN:Color.rgb(70,130,255),on?4:2,16));});FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);}
 
     List<ResolveInfo> allInstalled(){Intent i=new Intent(Intent.ACTION_MAIN);i.addCategory(Intent.CATEGORY_LAUNCHER);List<ResolveInfo>a=getPackageManager().queryIntentActivities(i,0),o=new ArrayList<>();for(ResolveInfo r:a)if(!r.activityInfo.packageName.equals(getPackageName()))o.add(r);Collections.sort(o,(a1,b1)->a1.loadLabel(getPackageManager()).toString().compareToIgnoreCase(b1.loadLabel(getPackageManager()).toString()));return o;}
     ResolveInfo resolvePackage(String pkg){for(ResolveInfo r:allInstalled())if(r.activityInfo.packageName.equals(pkg))return r;return null;}
     ResolveInfo findApp(String key){for(ResolveInfo r:allInstalled()){String s=(r.loadLabel(getPackageManager())+" "+r.activityInfo.packageName).toLowerCase(Locale.US);if(s.contains(key.toLowerCase(Locale.US)))return r;}return null;}
+    ResolveInfo findAppExact(String label){
+        String wanted=label==null?"":label.trim().toLowerCase(Locale.US);
+        for(ResolveInfo r:allInstalled()){
+            String l=r.loadLabel(getPackageManager()).toString().trim().toLowerCase(Locale.US);
+            if(l.equals(wanted))return r;
+        }
+        return null;
+    }
+    ResolveInfo findFirstByLabels(String... labels){
+        for(String s:labels){ResolveInfo r=findAppExact(s);if(r!=null)return r;}
+        for(String s:labels){ResolveInfo r=findApp(s);if(r!=null)return r;}
+        return null;
+    }
     boolean isInstalled(String pkg){try{getPackageManager().getPackageInfo(pkg,0);return true;}catch(Exception e){return false;}}
     void launchPreferred(String key){
         ResolveInfo r=findApp(key);
-        if(r!=null) launchThroughTudo(r.activityInfo.packageName);
+        if(r!=null) launchRaw(r.activityInfo.packageName);
         else Toast.makeText(this,"Aplicativo nao instalado",Toast.LENGTH_SHORT).show();
     }
+    void launchUniTVFree(){
+        ResolveInfo r=findFirstByLabels("UniTV Free","UniTV FREE","UniTVFree");
+        if(r!=null) launchRaw(r.activityInfo.packageName);
+        else Toast.makeText(this,"UniTV Free nao esta instalado",Toast.LENGTH_LONG).show();
+    }
+
     void launchTudo(){
         if(blocked)return;
         if(isInstalled(tudoPackage)){launchRaw(tudoPackage);return;}
@@ -239,7 +273,7 @@ public class MainActivity extends Activity {
         Toast.makeText(this,"Nao foi possivel encaminhar o aplicativo pelo Tudo Liberado",Toast.LENGTH_LONG).show();
     }
 
-    void launchPackage(String pkg){launchThroughTudo(pkg);}
+    void launchPackage(String pkg){launchRaw(pkg);}
 
     void pickApp(final int idx){final List<ResolveInfo>a=allInstalled();if(a.isEmpty())return;String[] n=new String[a.size()];for(int i=0;i<a.size();i++)n[i]=a.get(i).loadLabel(getPackageManager()).toString();new AlertDialog.Builder(this).setTitle("Escolher aplicativo").setItems(n,(d,w)->{prefs.edit().putString("slot"+idx,a.get(w).activityInfo.packageName).apply();buildLauncher(false);}).setNegativeButton("Cancelar",null).show();}
     void slotOptions(final int idx){String pkg=prefs.getString("slot"+idx,"");if(pkg.length()==0){pickApp(idx);return;}new AlertDialog.Builder(this).setTitle("Atalho").setItems(new String[]{"Trocar aplicativo","Remover atalho"},(d,w)->{if(w==0)pickApp(idx);else{prefs.edit().remove("slot"+idx).apply();buildLauncher(false);}}).show();}
@@ -248,7 +282,21 @@ public class MainActivity extends Activity {
     void logout(){new AlertDialog.Builder(this).setTitle("Sair").setMessage("Deseja remover o login desta TV Box?").setPositiveButton("SIM",(d,w)->{prefs.edit().clear().apply();showLogin();}).setNegativeButton("NAO",null).show();}
     void openSettings(){try{startActivity(new Intent(Settings.ACTION_SETTINGS));}catch(Exception e){}}
     void openWifi(){try{startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));}catch(Exception e){openSettings();}}
-    void openSupport(){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://wa.me/5521988510594")));}catch(Exception e){}}
+    void openSupport(){
+        try{
+            LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setPadding(28,22,28,22);
+            TextView title=txt("SUPORTE BBL.BOXTV",22,Gravity.CENTER);title.setTypeface(null,1);box.addView(title,new LinearLayout.LayoutParams(-1,58));
+            ImageView qr=new ImageView(this);qr.setScaleType(ImageView.ScaleType.CENTER_INSIDE);qr.setImageBitmap(makeQr("tel:+5521988510594",420));box.addView(qr,new LinearLayout.LayoutParams(430,430));
+            TextView phone=txt("(21) 98851-0594",24,Gravity.CENTER);phone.setTypeface(null,1);box.addView(phone,new LinearLayout.LayoutParams(-1,70));
+            new AlertDialog.Builder(this).setView(box).setPositiveButton("FECHAR",null).show();
+        }catch(Exception e){Toast.makeText(this,"Suporte: (21) 98851-0594",Toast.LENGTH_LONG).show();}
+    }
+    Bitmap makeQr(String text,int size)throws Exception{
+        BitMatrix m=new QRCodeWriter().encode(text,BarcodeFormat.QR_CODE,size,size);
+        Bitmap b=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);
+        for(int y=0;y<size;y++)for(int x=0;x<size;x++)b.setPixel(x,y,m.get(x,y)?Color.BLACK:Color.WHITE);
+        return b;
+    }
     void startClock(){handler.post(new Runnable(){public void run(){if(clock==null)return;Date d=new Date();clock.setText(new SimpleDateFormat("HH:mm:ss",new Locale("pt","BR")).format(d));date.setText(new SimpleDateFormat("EEE, dd 'de' MMM 'de' yyyy",new Locale("pt","BR")).format(d));handler.postDelayed(this,1000);}});}
 
     String abs(String u){if(u==null||u.trim().length()==0)return "";u=u.trim();if(u.startsWith("http://")||u.startsWith("https://"))return u;return BuildConfig.API_BASE_URL.replaceAll("/$","")+"/"+u.replaceFirst("^/","");}
