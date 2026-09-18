@@ -5,8 +5,8 @@ android { namespace 'com.bbl.boxtv.launcherv4'; compileSdk 35
     applicationId 'com.bbl.boxtv.telalauncher'
     minSdk 21
     targetSdk 28
-    versionCode 9
-    versionName '1.2.1-v4-exact-apps'
+    versionCode 10
+    versionName '1.3.0-v4-bundled-exact-apps'
     buildConfigField 'String', 'API_BASE_URL', '"https://bbl-tvbox-manager-v2.onrender.com"'
   }
   buildFeatures { buildConfig true }
