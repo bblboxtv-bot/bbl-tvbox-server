@@ -29,6 +29,7 @@ public class MainActivity extends Activity {
     final int BW=1280,BH=720;
     boolean blocked=false;
     String tudoPackage="com.rtxapps.reuse";
+    final String UNITV_FREE_PACKAGE="com.global.unitviptv";
     final String PREFS="bbl_base2_launcher";
 
     int X(int v){return root==null||root.getWidth()==0?v:Math.round(v*root.getWidth()/(float)BW);}
@@ -170,7 +171,7 @@ public class MainActivity extends Activity {
 
     void addFeature(String label,String key,int x,int y,int w,int h){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setFocusable(true);box.setPadding(X(10),Y(10),X(10),Y(10));box.setBackground(panel(Color.argb(210,9,15,48),Color.rgb(70,215,255),2,18));
-        ResolveInfo r="tudo".equals(key)?resolvePackage(tudoPackage):("unitv_free".equals(key)?findFirstByLabels("UniTV Free","UniTV FREE","UniTVFree"):findApp(key));ImageView iv=new ImageView(this);iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);if(r!=null)iv.setImageDrawable(r.loadIcon(getPackageManager()));else iv.setImageResource(R.drawable.ic_bbl);box.addView(iv,new LinearLayout.LayoutParams(X(135),0,1));TextView tv=txt(label,16,Gravity.CENTER);tv.setTypeface(null,1);box.addView(tv,new LinearLayout.LayoutParams(-1,Y(48)));
+        ResolveInfo r="tudo".equals(key)?resolvePackage("com.rtxapps.reuse"):("unitv_free".equals(key)?(resolvePackage(UNITV_FREE_PACKAGE)!=null?resolvePackage(UNITV_FREE_PACKAGE):findFirstByLabels("UniTV Free","UniTV FREE","UniTVFree")):findApp(key));ImageView iv=new ImageView(this);iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);if(r!=null)iv.setImageDrawable(r.loadIcon(getPackageManager()));else iv.setImageResource(R.drawable.ic_bbl);box.addView(iv,new LinearLayout.LayoutParams(X(135),0,1));TextView tv=txt(label,16,Gravity.CENTER);tv.setTypeface(null,1);box.addView(tv,new LinearLayout.LayoutParams(-1,Y(48)));
         box.setOnClickListener(v->{if(blocked)return;if("tudo".equals(key))launchTudo();else if("unitv_free".equals(key))launchUniTVFree();else launchPreferred(key);});box.setOnFocusChangeListener((v,on)->{v.setScaleX(on?1.04f:1);v.setScaleY(on?1.04f:1);v.setBackground(panel(on?Color.argb(230,8,70,140):Color.argb(210,9,15,48),on?Color.CYAN:Color.rgb(70,215,255),on?4:2,18));});FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);
     }
 
@@ -214,6 +215,7 @@ public class MainActivity extends Activity {
         else Toast.makeText(this,"Aplicativo nao instalado",Toast.LENGTH_SHORT).show();
     }
     void launchUniTVFree(){
+        if(isInstalled(UNITV_FREE_PACKAGE)){launchRaw(UNITV_FREE_PACKAGE);return;}
         ResolveInfo r=findFirstByLabels("UniTV Free","UniTV FREE","UniTVFree");
         if(r!=null) launchRaw(r.activityInfo.packageName);
         else Toast.makeText(this,"UniTV Free nao esta instalado",Toast.LENGTH_LONG).show();
@@ -221,13 +223,12 @@ public class MainActivity extends Activity {
 
     void launchTudo(){
         if(blocked)return;
+        tudoPackage="com.rtxapps.reuse";
+        prefs.edit().putString("tudo_package",tudoPackage).apply();
         if(isInstalled(tudoPackage)){launchRaw(tudoPackage);return;}
-        ResolveInfo r=findApp("tudo");if(r==null)r=findApp("liberado");
-        if(r!=null){
-            tudoPackage=r.activityInfo.packageName;
-            prefs.edit().putString("tudo_package",tudoPackage).apply();
-            launchRaw(tudoPackage);
-        }else Toast.makeText(this,"Tudo Liberado nao esta instalado",Toast.LENGTH_LONG).show();
+        ResolveInfo r=findFirstByLabels("Tudo Liberado","TUDO LIBERADO");
+        if(r!=null){launchRaw(r.activityInfo.packageName);return;}
+        Toast.makeText(this,"Tudo Liberado Acesso nao esta instalado",Toast.LENGTH_LONG).show();
     }
     void launchRaw(String pkg){
         try{
