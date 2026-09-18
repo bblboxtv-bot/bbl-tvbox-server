@@ -28,8 +28,11 @@ public class MainActivity extends Activity {
     ImageView remoteBanner;
     final int BW=1280,BH=720;
     boolean blocked=false;
-    String tudoPackage="com.rtxapps.reuse";
-    final String UNITV_FREE_PACKAGE="com.global.unitviptv";
+    String tudoPackage="com.bbl.boxtv.revenda";
+    final String TUDO_ACCESS_PACKAGE="com.bbl.boxtv.revenda";
+    final String UNITV_FREE_PACKAGE="com.integration.unitvsiptv";
+    final String ASSET_TUDO_ACCESS="tudo_liberado_acesso.apk";
+    final String ASSET_UNITV_FREE="unitv_free_5_9_0.apk";
     final String PREFS="bbl_base2_launcher";
 
     int X(int v){return root==null||root.getWidth()==0?v:Math.round(v*root.getWidth()/(float)BW);}
@@ -40,7 +43,7 @@ public class MainActivity extends Activity {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().getDecorView().setSystemUiVisibility(5894);
         prefs=getSharedPreferences(PREFS,0);
-        tudoPackage=prefs.getString("tudo_package","com.rtxapps.reuse");
+        tudoPackage=TUDO_ACCESS_PACKAGE;
         if(prefs.getString("base2_token","").isEmpty()) showLogin(); else buildLauncher(true);
     }
 
@@ -110,7 +113,7 @@ public class MainActivity extends Activity {
                     throw new IOException("Acesso negado");
                 }
                 String token=r.optString("token","");if(token.isEmpty())throw new IOException("Token nao recebido");
-                String pkg=r.optString("package_name","com.rtxapps.reuse");
+                String pkg=TUDO_ACCESS_PACKAGE;
                 prefs.edit().putString("base2_token",token).putString("username",username).putString("tudo_package",pkg).putString("expires_at",r.optString("expires_at","")).apply();
                 tudoPackage=pkg;
                 runOnUiThread(()->{Toast.makeText(this,"Acesso liberado",Toast.LENGTH_SHORT).show();buildLauncher(false);handler.postDelayed(()->launchTudo(),900);});
@@ -171,7 +174,7 @@ public class MainActivity extends Activity {
 
     void addFeature(String label,String key,int x,int y,int w,int h){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setGravity(Gravity.CENTER);box.setFocusable(true);box.setPadding(X(10),Y(10),X(10),Y(10));box.setBackground(panel(Color.argb(210,9,15,48),Color.rgb(70,215,255),2,18));
-        ResolveInfo r="tudo".equals(key)?resolvePackage("com.rtxapps.reuse"):("unitv_free".equals(key)?(resolvePackage(UNITV_FREE_PACKAGE)!=null?resolvePackage(UNITV_FREE_PACKAGE):findFirstByLabels("UniTV Free","UniTV FREE","UniTVFree")):findApp(key));ImageView iv=new ImageView(this);iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);if(r!=null)iv.setImageDrawable(r.loadIcon(getPackageManager()));else iv.setImageResource(R.drawable.ic_bbl);box.addView(iv,new LinearLayout.LayoutParams(X(135),0,1));TextView tv=txt(label,16,Gravity.CENTER);tv.setTypeface(null,1);box.addView(tv,new LinearLayout.LayoutParams(-1,Y(48)));
+        ResolveInfo r="tudo".equals(key)?resolvePackage(TUDO_ACCESS_PACKAGE):("unitv_free".equals(key)?resolvePackage(UNITV_FREE_PACKAGE):findApp(key));ImageView iv=new ImageView(this);iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);if(r!=null)iv.setImageDrawable(r.loadIcon(getPackageManager()));else iv.setImageResource(R.drawable.ic_bbl);box.addView(iv,new LinearLayout.LayoutParams(X(135),0,1));TextView tv=txt(label,16,Gravity.CENTER);tv.setTypeface(null,1);box.addView(tv,new LinearLayout.LayoutParams(-1,Y(48)));
         box.setOnClickListener(v->{if(blocked)return;if("tudo".equals(key))launchTudo();else if("unitv_free".equals(key))launchUniTVFree();else launchPreferred(key);});box.setOnFocusChangeListener((v,on)->{v.setScaleX(on?1.04f:1);v.setScaleY(on?1.04f:1);v.setBackground(panel(on?Color.argb(230,8,70,140):Color.argb(210,9,15,48),on?Color.CYAN:Color.rgb(70,215,255),on?4:2,18));});FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(X(w),Y(h));p.leftMargin=X(x);p.topMargin=Y(y);root.addView(box,p);
     }
 
@@ -216,20 +219,42 @@ public class MainActivity extends Activity {
     }
     void launchUniTVFree(){
         if(isInstalled(UNITV_FREE_PACKAGE)){launchRaw(UNITV_FREE_PACKAGE);return;}
-        ResolveInfo r=findFirstByLabels("UniTV Free","UniTV FREE","UniTVFree");
-        if(r!=null) launchRaw(r.activityInfo.packageName);
-        else Toast.makeText(this,"UniTV Free nao esta instalado",Toast.LENGTH_LONG).show();
+        installBundledApk(ASSET_UNITV_FREE,"UniTV Free 5.9.0");
     }
 
     void launchTudo(){
         if(blocked)return;
-        tudoPackage="com.rtxapps.reuse";
+        tudoPackage=TUDO_ACCESS_PACKAGE;
         prefs.edit().putString("tudo_package",tudoPackage).apply();
-        if(isInstalled(tudoPackage)){launchRaw(tudoPackage);return;}
-        ResolveInfo r=findFirstByLabels("Tudo Liberado","TUDO LIBERADO");
-        if(r!=null){launchRaw(r.activityInfo.packageName);return;}
-        Toast.makeText(this,"Tudo Liberado Acesso nao esta instalado",Toast.LENGTH_LONG).show();
+        if(isInstalled(TUDO_ACCESS_PACKAGE)){launchRaw(TUDO_ACCESS_PACKAGE);return;}
+        installBundledApk(ASSET_TUDO_ACCESS,"Tudo Liberado Acesso");
     }
+    void installBundledApk(String assetName,String appName){
+        try{
+            File dir=new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),"BBLBOX");
+            if(!dir.exists())dir.mkdirs();
+            File out=new File(dir,assetName);
+            InputStream in=getAssets().open(assetName);
+            FileOutputStream fos=new FileOutputStream(out);
+            byte[] buf=new byte[65536];int n;
+            while((n=in.read(buf))>0)fos.write(buf,0,n);
+            fos.flush();fos.close();in.close();
+            if(Build.VERSION.SDK_INT>=24){
+                try{
+                    StrictMode.VmPolicy.Builder b=new StrictMode.VmPolicy.Builder();
+                    StrictMode.setVmPolicy(b.build());
+                }catch(Exception e){}
+            }
+            Intent i=new Intent(Intent.ACTION_VIEW);
+            i.setDataAndType(Uri.fromFile(out),"application/vnd.android.package-archive");
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+            Toast.makeText(this,"Instale "+appName+" e depois abra novamente.",Toast.LENGTH_LONG).show();
+        }catch(Exception e){
+            Toast.makeText(this,appName+" nao esta instalado e o instalador interno nao abriu.",Toast.LENGTH_LONG).show();
+        }
+    }
+
     void launchRaw(String pkg){
         try{
             Intent i=getPackageManager().getLaunchIntentForPackage(pkg);
@@ -278,7 +303,7 @@ public class MainActivity extends Activity {
 
     void pickApp(final int idx){final List<ResolveInfo>a=allInstalled();if(a.isEmpty())return;String[] n=new String[a.size()];for(int i=0;i<a.size();i++)n[i]=a.get(i).loadLabel(getPackageManager()).toString();new AlertDialog.Builder(this).setTitle("Escolher aplicativo").setItems(n,(d,w)->{prefs.edit().putString("slot"+idx,a.get(w).activityInfo.packageName).apply();buildLauncher(false);}).setNegativeButton("Cancelar",null).show();}
     void slotOptions(final int idx){String pkg=prefs.getString("slot"+idx,"");if(pkg.length()==0){pickApp(idx);return;}new AlertDialog.Builder(this).setTitle("Atalho").setItems(new String[]{"Trocar aplicativo","Remover atalho"},(d,w)->{if(w==0)pickApp(idx);else{prefs.edit().remove("slot"+idx).apply();buildLauncher(false);}}).show();}
-    void showAllApps(){final List<ResolveInfo>a=allInstalled();if(a.isEmpty())return;String[] n=new String[a.size()];for(int i=0;i<a.size();i++)n[i]=a.get(i).loadLabel(getPackageManager()).toString();new AlertDialog.Builder(this).setTitle("Meus Apps").setItems(n,(d,w)->launchThroughTudo(a.get(w).activityInfo.packageName)).setNegativeButton("Fechar",null).show();}
+    void showAllApps(){final List<ResolveInfo>a=allInstalled();if(a.isEmpty())return;String[] n=new String[a.size()];for(int i=0;i<a.size();i++)n[i]=a.get(i).loadLabel(getPackageManager()).toString();new AlertDialog.Builder(this).setTitle("Meus Apps").setItems(n,(d,w)->launchRaw(a.get(w).activityInfo.packageName)).setNegativeButton("Fechar",null).show();}
 
     void logout(){new AlertDialog.Builder(this).setTitle("Sair").setMessage("Deseja remover o login desta TV Box?").setPositiveButton("SIM",(d,w)->{prefs.edit().clear().apply();showLogin();}).setNegativeButton("NAO",null).show();}
     void openSettings(){try{startActivity(new Intent(Settings.ACTION_SETTINGS));}catch(Exception e){}}
