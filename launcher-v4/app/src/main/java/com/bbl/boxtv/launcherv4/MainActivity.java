@@ -18,6 +18,8 @@ import org.json.*;
 import com.google.zxing.*;
 import com.google.zxing.common.*;
 import com.google.zxing.qrcode.*;
+import androidx.core.content.FileProvider;
+import java.security.MessageDigest;
 
 public class MainActivity extends Activity {
     FrameLayout root,banner,lockOverlay;
@@ -28,11 +30,10 @@ public class MainActivity extends Activity {
     ImageView remoteBanner;
     final int BW=1280,BH=720;
     boolean blocked=false;
+    boolean remoteInstallBusy=false;
     String tudoPackage="com.bbl.boxtv.revenda";
     final String TUDO_ACCESS_PACKAGE="com.bbl.boxtv.revenda";
     final String UNITV_FREE_PACKAGE="com.integration.unitvsiptv";
-    final String ASSET_TUDO_ACCESS="tudo_liberado_acesso.apk";
-    final String ASSET_UNITV_FREE="unitv_free_5_9_0.apk";
     final String PREFS="bbl_base2_launcher";
 
     int X(int v){return root==null||root.getWidth()==0?v:Math.round(v*root.getWidth()/(float)BW);}
@@ -52,6 +53,7 @@ public class MainActivity extends Activity {
         if(root!=null&&!prefs.getString("base2_token","").isEmpty()){
             handler.postDelayed(()->checkAccess(),400);
             handler.postDelayed(()->loadRemoteTheme(),800);
+            handler.postDelayed(()->checkRemoteInstallQueue(),1400);
         }
     }
     @Override protected void onDestroy(){handler.removeCallbacksAndMessages(null);super.onDestroy();}
@@ -126,11 +128,14 @@ public class MainActivity extends Activity {
     void buildLauncher(boolean autoOpen){
         handler.removeCallbacksAndMessages(null);blocked=false;
         root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);bgView=new BgView(this);root.addView(bgView,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
-        root.post(()->{layoutUI();loadCachedTheme();loadRemoteTheme();checkAccess();if(autoOpen)handler.postDelayed(()->launchTudo(),1100);});
+        root.post(()->{layoutUI();loadCachedTheme();loadRemoteTheme();checkAccess();handler.postDelayed(()->checkRemoteInstallQueue(),1800);if(autoOpen)handler.postDelayed(()->launchTudo(),1100);});
     }
 
     void layoutUI(){
-        TextView logo=txt("TUDO LIBERADO",34,Gravity.CENTER);logo.setTypeface(null,1);logo.setTextColor(Color.rgb(255,185,70));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(X(420),Y(54));lp.leftMargin=X(430);lp.topMargin=Y(12);root.addView(logo,lp);
+        TextView logo=txt("BBL.BOXTV",34,Gravity.CENTER);logo.setTypeface(null,1);logo.setTextColor(Color.rgb(255,170,35));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(X(420),Y(54));lp.leftMargin=X(430);lp.topMargin=Y(12);root.addView(logo,lp);
+        int logoRes=getResources().getIdentifier("bbl_fixed_logo","drawable",getPackageName());
+        if(logoRes!=0){ImageView fixedLogo=new ImageView(this);fixedLogo.setImageResource(logoRes);fixedLogo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(X(420),Y(76));flp.leftMargin=X(430);flp.topMargin=Y(2);root.addView(fixedLogo,flp);logo.setVisibility(View.GONE);}
+        TextView clientBadge=txt("Cliente: "+prefs.getString("username",""),14,Gravity.LEFT|Gravity.CENTER_VERTICAL);clientBadge.setTypeface(null,1);clientBadge.setPadding(X(14),0,X(10),0);clientBadge.setBackground(panel(Color.argb(205,5,10,24),Color.rgb(80,210,255),2,12));FrameLayout.LayoutParams cbp=new FrameLayout.LayoutParams(X(280),Y(44));cbp.leftMargin=X(24);cbp.topMargin=Y(82);root.addView(clientBadge,cbp);
         TextView sl=txt("BBL.BOXTV • O MELHOR DO ENTRETENIMENTO EM UM SO LUGAR",12,Gravity.CENTER);FrameLayout.LayoutParams slp=new FrameLayout.LayoutParams(X(500),Y(28));slp.leftMargin=X(390);slp.topMargin=Y(58);root.addView(sl,slp);
         clock=txt("",28,Gravity.RIGHT|Gravity.CENTER_VERTICAL);clock.setTypeface(null,1);FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(X(175),Y(42));cp.leftMargin=X(1080);cp.topMargin=Y(10);root.addView(clock,cp);
         date=txt("",12,Gravity.RIGHT|Gravity.CENTER_VERTICAL);FrameLayout.LayoutParams dp=new FrameLayout.LayoutParams(X(260),Y(28));dp.leftMargin=X(995);dp.topMargin=Y(48);root.addView(date,dp);startClock();
@@ -139,7 +144,9 @@ public class MainActivity extends Activity {
         banner=new FrameLayout(this);banner.setBackground(panel(Color.argb(178,5,8,18),Color.rgb(80,210,255),2,18));FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(X(775),Y(330));bp.leftMargin=X(24);bp.topMargin=Y(132);root.addView(banner,bp);
         TextView b1=txt("TUDO LIBERADO",52,Gravity.CENTER);b1.setTypeface(null,1);b1.setTextColor(Color.rgb(255,155,40));FrameLayout.LayoutParams b1p=new FrameLayout.LayoutParams(-1,Y(110));b1p.topMargin=Y(52);banner.addView(b1,b1p);
         TextView b2=txt("FILMES • SERIES • CANAIS • ESPORTES • INFANTIL",17,Gravity.CENTER);b2.setTypeface(null,1);FrameLayout.LayoutParams b2p=new FrameLayout.LayoutParams(-1,Y(48));b2p.topMargin=Y(165);banner.addView(b2,b2p);
-        userText=txt("Cliente: "+prefs.getString("username",""),14,Gravity.CENTER);FrameLayout.LayoutParams usp=new FrameLayout.LayoutParams(-1,Y(38));usp.topMargin=Y(218);banner.addView(userText,usp);
+        userText=txt("",14,Gravity.CENTER);FrameLayout.LayoutParams usp=new FrameLayout.LayoutParams(-1,Y(1));usp.topMargin=Y(1);banner.addView(userText,usp);
+        int bannerRes=getResources().getIdentifier("bbl_fixed_banner","drawable",getPackageName());
+        if(bannerRes!=0){ImageView fixedBanner=new ImageView(this);fixedBanner.setImageResource(bannerRes);fixedBanner.setScaleType(ImageView.ScaleType.CENTER_CROP);banner.addView(fixedBanner,new FrameLayout.LayoutParams(-1,-1));}
         remoteBanner=new ImageView(this);remoteBanner.setScaleType(ImageView.ScaleType.CENTER_CROP);remoteBanner.setVisibility(View.GONE);banner.addView(remoteBanner,new FrameLayout.LayoutParams(-1,-1));
 
         addFeature("TUDO LIBERADO","tudo",815,132,215,330);addFeature("UniTV FREE","unitv_free",1040,132,216,330);
@@ -219,7 +226,7 @@ public class MainActivity extends Activity {
     }
     void launchUniTVFree(){
         if(isInstalled(UNITV_FREE_PACKAGE)){launchRaw(UNITV_FREE_PACKAGE);return;}
-        installBundledApk(ASSET_UNITV_FREE,"UniTV Free 5.9.0");
+        installAssignedAppByPackage(UNITV_FREE_PACKAGE,"UniTV Free 5.9.0");
     }
 
     void launchTudo(){
@@ -227,32 +234,83 @@ public class MainActivity extends Activity {
         tudoPackage=TUDO_ACCESS_PACKAGE;
         prefs.edit().putString("tudo_package",tudoPackage).apply();
         if(isInstalled(TUDO_ACCESS_PACKAGE)){launchRaw(TUDO_ACCESS_PACKAGE);return;}
-        installBundledApk(ASSET_TUDO_ACCESS,"Tudo Liberado Acesso");
+        installAssignedAppByPackage(TUDO_ACCESS_PACKAGE,"Tudo Liberado Acesso");
     }
-    void installBundledApk(String assetName,String appName){
+    void installAssignedAppByPackage(String pkg,String appName){
+        final String token=prefs.getString("base2_token","");
+        if(token.isEmpty()){Toast.makeText(this,"Faça login novamente.",Toast.LENGTH_LONG).show();return;}
+        Toast.makeText(this,"Procurando "+appName+" no painel...",Toast.LENGTH_SHORT).show();
+        new Thread(()->{
+            try{
+                JSONObject req=new JSONObject();req.put("token",token);req.put("device_id",localDeviceId());
+                JSONObject r=postJson(BuildConfig.API_BASE_URL+"/base2/api/apps/list",req);
+                JSONArray apps=r.optJSONArray("apps");
+                JSONObject found=null;
+                if(apps!=null)for(int i=0;i<apps.length();i++){JSONObject a=apps.optJSONObject(i);if(a!=null&&pkg.equals(a.optString("package_name"))){found=a;break;}}
+                if(found==null){runOnUiThread(()->Toast.makeText(this,appName+" não está enviado para este cliente no painel.",Toast.LENGTH_LONG).show());return;}
+                String url=found.optString("download_url","");
+                String sha=found.optString("sha256","");
+                File apk=downloadApk(url,pkg.replace('.','_')+".apk",sha);
+                runOnUiThread(()->openPackageInstaller(apk,appName));
+            }catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Falha ao baixar "+appName+": "+e.getMessage(),Toast.LENGTH_LONG).show());}
+        }).start();
+    }
+
+    JSONObject postJson(String url,JSONObject body)throws Exception{
+        HttpURLConnection h=(HttpURLConnection)new URL(url).openConnection();h.setConnectTimeout(12000);h.setReadTimeout(20000);h.setRequestMethod("POST");h.setDoOutput(true);h.setRequestProperty("Content-Type","application/json");
+        OutputStream o=h.getOutputStream();o.write(body.toString().getBytes("UTF-8"));o.close();int rc=h.getResponseCode();String s=readAll((rc>=200&&rc<300)?h.getInputStream():h.getErrorStream());h.disconnect();
+        JSONObject r=new JSONObject(s.length()>0?s:"{}");if(rc<200||rc>=300||!r.optBoolean("ok",false))throw new IOException(r.optString("error","HTTP "+rc));return r;
+    }
+
+    File downloadApk(String url,String filename,String expectedSha)throws Exception{
+        if(url==null||url.trim().isEmpty())throw new IOException("URL do APK ausente");
+        File dir=getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);if(dir==null)dir=getCacheDir();if(!dir.exists())dir.mkdirs();
+        File out=new File(dir,filename);HttpURLConnection h=(HttpURLConnection)new URL(url).openConnection();h.setConnectTimeout(15000);h.setReadTimeout(60000);h.setInstanceFollowRedirects(true);
+        int rc=h.getResponseCode();if(rc<200||rc>=300)throw new IOException("HTTP "+rc);
+        InputStream in=h.getInputStream();FileOutputStream fos=new FileOutputStream(out);byte[] b=new byte[65536];int n;while((n=in.read(b))>0)fos.write(b,0,n);fos.flush();fos.close();in.close();h.disconnect();
+        if(expectedSha!=null&&!expectedSha.trim().isEmpty()){String got=sha256(out);if(!expectedSha.equalsIgnoreCase(got)){out.delete();throw new IOException("arquivo APK inválido");}}
+        return out;
+    }
+
+    String sha256(File f)throws Exception{
+        MessageDigest md=MessageDigest.getInstance("SHA-256");InputStream in=new FileInputStream(f);byte[] b=new byte[65536];int n;while((n=in.read(b))>0)md.update(b,0,n);in.close();StringBuilder s=new StringBuilder();for(byte x:md.digest())s.append(String.format(Locale.US,"%02x",x&255));return s.toString();
+    }
+
+    void openPackageInstaller(File apk,String appName){
         try{
-            File dir=new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),"BBLBOX");
-            if(!dir.exists())dir.mkdirs();
-            File out=new File(dir,assetName);
-            InputStream in=getAssets().open(assetName);
-            FileOutputStream fos=new FileOutputStream(out);
-            byte[] buf=new byte[65536];int n;
-            while((n=in.read(buf))>0)fos.write(buf,0,n);
-            fos.flush();fos.close();in.close();
-            if(Build.VERSION.SDK_INT>=24){
-                try{
-                    StrictMode.VmPolicy.Builder b=new StrictMode.VmPolicy.Builder();
-                    StrictMode.setVmPolicy(b.build());
-                }catch(Exception e){}
-            }
-            Intent i=new Intent(Intent.ACTION_VIEW);
-            i.setDataAndType(Uri.fromFile(out),"application/vnd.android.package-archive");
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
-            Toast.makeText(this,"Instale "+appName+" e depois abra novamente.",Toast.LENGTH_LONG).show();
-        }catch(Exception e){
-            Toast.makeText(this,appName+" nao esta instalado e o instalador interno nao abriu.",Toast.LENGTH_LONG).show();
-        }
+            Uri uri;
+            if(Build.VERSION.SDK_INT>=24) uri=FileProvider.getUriForFile(this,getPackageName()+".fileprovider",apk); else uri=Uri.fromFile(apk);
+            Intent i=new Intent(Intent.ACTION_VIEW);i.setDataAndType(uri,"application/vnd.android.package-archive");i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(i);
+            Toast.makeText(this,"Confirme a instalação de "+appName+".",Toast.LENGTH_LONG).show();
+        }catch(Exception e){Toast.makeText(this,"Não foi possível abrir o instalador: "+e.getMessage(),Toast.LENGTH_LONG).show();}
+    }
+
+    void checkRemoteInstallQueue(){
+        if(remoteInstallBusy||prefs.getString("base2_token","").isEmpty())return;remoteInstallBusy=true;
+        new Thread(()->{
+            try{
+                JSONObject req=new JSONObject();req.put("token",prefs.getString("base2_token",""));req.put("device_id",localDeviceId());
+                JSONObject r=postJson(BuildConfig.API_BASE_URL+"/base2/api/apps/pending",req);JSONObject a=r.optJSONObject("app");
+                if(a!=null){
+                    String qid=a.optString("queue_id",""),pkg=a.optString("package_name",""),name=a.optString("name","Aplicativo"),action=a.optString("action","install");
+                    if("uninstall".equals(action)){runOnUiThread(()->requestUninstall(pkg,name));postRemoteResult(qid,"requested","desinstalação solicitada");}
+                    else if(isInstalled(pkg)){postRemoteResult(qid,"done","já instalado");}
+                    else{
+                        File apk=downloadApk(a.optString("download_url",""),pkg.replace('.','_')+".apk",a.optString("sha256",""));
+                        runOnUiThread(()->openPackageInstaller(apk,name));postRemoteResult(qid,"requested","instalação solicitada");
+                    }
+                }
+            }catch(Exception e){}finally{remoteInstallBusy=false;if(root!=null&&!prefs.getString("base2_token","").isEmpty())handler.postDelayed(()->checkRemoteInstallQueue(),10000);}
+        }).start();
+    }
+
+    void postRemoteResult(String qid,String status,String result){
+        if(qid==null||qid.isEmpty())return;
+        try{JSONObject j=new JSONObject();j.put("token",prefs.getString("base2_token",""));j.put("device_id",localDeviceId());j.put("queue_id",qid);j.put("status",status);j.put("result",result);postJson(BuildConfig.API_BASE_URL+"/base2/api/apps/result",j);}catch(Exception e){}
+    }
+
+    void requestUninstall(String pkg,String name){
+        try{Intent i=new Intent(Intent.ACTION_DELETE,Uri.parse("package:"+pkg));i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(i);}catch(Exception e){Toast.makeText(this,"Não foi possível desinstalar "+name,Toast.LENGTH_LONG).show();}
     }
 
     void launchRaw(String pkg){
