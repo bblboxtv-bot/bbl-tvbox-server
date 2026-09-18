@@ -180,13 +180,70 @@ public class MainActivity extends Activity {
     ResolveInfo resolvePackage(String pkg){for(ResolveInfo r:allInstalled())if(r.activityInfo.packageName.equals(pkg))return r;return null;}
     ResolveInfo findApp(String key){for(ResolveInfo r:allInstalled()){String s=(r.loadLabel(getPackageManager())+" "+r.activityInfo.packageName).toLowerCase(Locale.US);if(s.contains(key.toLowerCase(Locale.US)))return r;}return null;}
     boolean isInstalled(String pkg){try{getPackageManager().getPackageInfo(pkg,0);return true;}catch(Exception e){return false;}}
-    void launchPreferred(String key){ResolveInfo r=findApp(key);if(r!=null)launchPackage(r.activityInfo.packageName);else Toast.makeText(this,"Aplicativo nao instalado",Toast.LENGTH_SHORT).show();}
-    void launchTudo(){if(blocked)return;if(isInstalled(tudoPackage)){launchPackage(tudoPackage);return;}ResolveInfo r=findApp("tudo");if(r==null)r=findApp("liberado");if(r!=null){tudoPackage=r.activityInfo.packageName;prefs.edit().putString("tudo_package",tudoPackage).apply();launchPackage(tudoPackage);}else Toast.makeText(this,"Tudo Liberado nao esta instalado",Toast.LENGTH_LONG).show();}
-    void launchPackage(String pkg){try{Intent i=getPackageManager().getLaunchIntentForPackage(pkg);if(i!=null){i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(i);}}catch(Exception e){}}
+    void launchPreferred(String key){
+        ResolveInfo r=findApp(key);
+        if(r!=null) launchThroughTudo(r.activityInfo.packageName);
+        else Toast.makeText(this,"Aplicativo nao instalado",Toast.LENGTH_SHORT).show();
+    }
+    void launchTudo(){
+        if(blocked)return;
+        if(isInstalled(tudoPackage)){launchRaw(tudoPackage);return;}
+        ResolveInfo r=findApp("tudo");if(r==null)r=findApp("liberado");
+        if(r!=null){
+            tudoPackage=r.activityInfo.packageName;
+            prefs.edit().putString("tudo_package",tudoPackage).apply();
+            launchRaw(tudoPackage);
+        }else Toast.makeText(this,"Tudo Liberado nao esta instalado",Toast.LENGTH_LONG).show();
+    }
+    void launchRaw(String pkg){
+        try{
+            Intent i=getPackageManager().getLaunchIntentForPackage(pkg);
+            if(i!=null){i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(i);}
+        }catch(Exception e){}
+    }
+
+    void launchThroughTudo(String targetPkg){
+        if(blocked||targetPkg==null||targetPkg.trim().isEmpty())return;
+        if(targetPkg.equals(tudoPackage)){launchTudo();return;}
+        if(!isInstalled(tudoPackage)){
+            ResolveInfo tr=findApp("tudo");if(tr==null)tr=findApp("liberado");
+            if(tr!=null){tudoPackage=tr.activityInfo.packageName;prefs.edit().putString("tudo_package",tudoPackage).apply();}
+        }
+        if(!isInstalled(tudoPackage)){
+            Toast.makeText(this,"Tudo Liberado nao esta instalado",Toast.LENGTH_LONG).show();
+            return;
+        }
+        try{
+            Intent b=new Intent("com.bbl.TUDO_LIBERADO.OPEN_APP");
+            b.setPackage(tudoPackage);
+            b.putExtra("package_name",targetPkg);
+            b.putExtra("target_package",targetPkg);
+            b.putExtra("app_package",targetPkg);
+            b.putExtra("pkg",targetPkg);
+            sendBroadcast(b);
+        }catch(Exception e){}
+        try{
+            Intent i=getPackageManager().getLaunchIntentForPackage(tudoPackage);
+            if(i!=null){
+                i.putExtra("package_name",targetPkg);
+                i.putExtra("target_package",targetPkg);
+                i.putExtra("app_package",targetPkg);
+                i.putExtra("pkg",targetPkg);
+                i.putExtra("bbl_target_package",targetPkg);
+                i.putExtra("open_app",true);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(i);
+                return;
+            }
+        }catch(Exception e){}
+        Toast.makeText(this,"Nao foi possivel encaminhar o aplicativo pelo Tudo Liberado",Toast.LENGTH_LONG).show();
+    }
+
+    void launchPackage(String pkg){launchThroughTudo(pkg);}
 
     void pickApp(final int idx){final List<ResolveInfo>a=allInstalled();if(a.isEmpty())return;String[] n=new String[a.size()];for(int i=0;i<a.size();i++)n[i]=a.get(i).loadLabel(getPackageManager()).toString();new AlertDialog.Builder(this).setTitle("Escolher aplicativo").setItems(n,(d,w)->{prefs.edit().putString("slot"+idx,a.get(w).activityInfo.packageName).apply();buildLauncher(false);}).setNegativeButton("Cancelar",null).show();}
     void slotOptions(final int idx){String pkg=prefs.getString("slot"+idx,"");if(pkg.length()==0){pickApp(idx);return;}new AlertDialog.Builder(this).setTitle("Atalho").setItems(new String[]{"Trocar aplicativo","Remover atalho"},(d,w)->{if(w==0)pickApp(idx);else{prefs.edit().remove("slot"+idx).apply();buildLauncher(false);}}).show();}
-    void showAllApps(){final List<ResolveInfo>a=allInstalled();if(a.isEmpty())return;String[] n=new String[a.size()];for(int i=0;i<a.size();i++)n[i]=a.get(i).loadLabel(getPackageManager()).toString();new AlertDialog.Builder(this).setTitle("Meus Apps").setItems(n,(d,w)->launchPackage(a.get(w).activityInfo.packageName)).setNegativeButton("Fechar",null).show();}
+    void showAllApps(){final List<ResolveInfo>a=allInstalled();if(a.isEmpty())return;String[] n=new String[a.size()];for(int i=0;i<a.size();i++)n[i]=a.get(i).loadLabel(getPackageManager()).toString();new AlertDialog.Builder(this).setTitle("Meus Apps").setItems(n,(d,w)->launchThroughTudo(a.get(w).activityInfo.packageName)).setNegativeButton("Fechar",null).show();}
 
     void logout(){new AlertDialog.Builder(this).setTitle("Sair").setMessage("Deseja remover o login desta TV Box?").setPositiveButton("SIM",(d,w)->{prefs.edit().clear().apply();showLogin();}).setNegativeButton("NAO",null).show();}
     void openSettings(){try{startActivity(new Intent(Settings.ACTION_SETTINGS));}catch(Exception e){}}
