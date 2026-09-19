@@ -108,7 +108,10 @@ def enroll(b:Enroll):
 
 def payload(c,d):
     ids=[];lay=None
-    if d.get('layout_id'):
+    v55=_load_v55()
+    if v55 and d.get('id') in set(v55.get('device_ids') or []):
+      ids=list(v55.get('app_ids') or [])[:20]
+    elif d.get('layout_id'):
       lay=one(c,'SELECT * FROM layouts WHERE id=?',(d['layout_id'],));ids=json.loads((lay or {}).get('app_ids') or '[]')
     if not ids:ids=json.loads(d.get('allowed_apps') or '[]')
     aa=[]
@@ -320,22 +323,37 @@ def launcher_update_check(did:str,current_version_code:int=0,authorization:Optio
 
 
 V55_LAYOUT_ID='bbl-v55-principal'
+V55_META=UPLOAD_DIR/'launcher_v55.json'
+
+def _load_v55():
+    try:
+      if V55_META.exists():
+        x=json.loads(V55_META.read_text(encoding='utf-8'))
+        return x if isinstance(x,dict) else None
+    except Exception: pass
+    return None
+
+def _save_v55(x):
+    tmp=UPLOAD_DIR/'launcher_v55.tmp'
+    tmp.write_text(json.dumps(x,ensure_ascii=False),encoding='utf-8')
+    tmp.replace(V55_META)
 
 @app.get('/admin/launcher-v55',response_class=HTMLResponse)
 def launcher_v55(key:str=''):
     adm(key)
     c=db()
     aa=rows(c,'SELECT * FROM apps ORDER BY name')
-    dds=rows(c,'SELECT id,display_name,launcher_version,layout_id,last_seen FROM devices ORDER BY last_seen DESC')
-    lay=one(c,'SELECT * FROM layouts WHERE id=?',(V55_LAYOUT_ID,))
+    dds=rows(c,'SELECT id,display_name,launcher_version,last_seen FROM devices ORDER BY last_seen DESC')
     c.close()
-    selected=set(json.loads((lay or {}).get('app_ids') or '[]'))
+    cfg=_load_v55() or {'app_ids':[],'device_ids':[]}
+    selected=set(cfg.get('app_ids') or [])
+    selected_devices=set(cfg.get('device_ids') or [])
     app_checks=''.join(
       f'<label><input class="v55app" style="width:auto" type="checkbox" name="app_ids" value="{a["id"]}" {"checked" if a["id"] in selected else ""}> {a["name"]} <span class="muted">{a.get("package_name") or ""}</span></label><br>'
       for a in aa
     )
     device_checks=''.join(
-      f'<label><input style="width:auto" type="checkbox" name="device_ids" value="{d["id"]}" {"checked" if d.get("layout_id")==V55_LAYOUT_ID else ""}> {d.get("display_name") or d["id"]} <span class="muted">• {d.get("launcher_version") or "sem versão"}</span></label><br>'
+      f'<label><input style="width:auto" type="checkbox" name="device_ids" value="{d["id"]}" {"checked" if d["id"] in selected_devices else ""}> {d.get("display_name") or d["id"]} <span class="muted">• {d.get("launcher_version") or "sem versão"}</span></label><br>'
       for d in dds
     )
     count=len(selected)
@@ -369,18 +387,7 @@ def launcher_v55_save(key:str,app_ids:list[str]=Form(default=[]),device_ids:list
     device_ids=list(dict.fromkeys(device_ids))
     if len(app_ids)>20:
       raise HTTPException(400,'A Launcher V5.5 aceita no máximo 20 aplicativos')
-    c=db()
-    lay=one(c,'SELECT id FROM layouts WHERE id=?',(V55_LAYOUT_ID,))
-    if lay:
-      ex(c,'UPDATE layouts SET name=?,app_ids=? WHERE id=?',('BBL.BOXTV V5.5 PRINCIPAL',json.dumps(app_ids),V55_LAYOUT_ID))
-    else:
-      ex(c,'INSERT INTO layouts(id,name,app_ids,created_at) VALUES(?,?,?,?)',(V55_LAYOUT_ID,'BBL.BOXTV V5.5 PRINCIPAL',json.dumps(app_ids),now()))
-    ex(c,'UPDATE devices SET layout_id=NULL WHERE layout_id=?',(V55_LAYOUT_ID,))
-    for did in device_ids:
-      ex(c,'UPDATE devices SET layout_id=? WHERE id=?',(V55_LAYOUT_ID,did))
-      log(c,did,'launcher_v55','perfil principal aplicado')
-    c.commit()
-    c.close()
+    _save_v55({'app_ids':app_ids,'device_ids':device_ids,'updated_at':now()})
     return go('/admin/launcher-v55',key)
 
 @app.get('/admin/layouts',response_class=HTMLResponse)
