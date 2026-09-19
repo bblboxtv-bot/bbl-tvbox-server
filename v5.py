@@ -50,8 +50,7 @@ def init():
       "CREATE TABLE IF NOT EXISTS banners(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,media_type TEXT NOT NULL DEFAULT 'image',created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS wallpapers(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,name TEXT NOT NULL,days INTEGER NOT NULL DEFAULT 30,price_cents INTEGER NOT NULL DEFAULT 0,layout_id TEXT,created_at TEXT)",
-      "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')",
-      "CREATE TABLE IF NOT EXISTS launcher_updates(id TEXT PRIMARY KEY,version_name TEXT NOT NULL,version_code INTEGER NOT NULL,filename TEXT NOT NULL,size_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',mandatory INTEGER NOT NULL DEFAULT 0,published INTEGER NOT NULL DEFAULT 1,notes TEXT NOT NULL DEFAULT '',created_at TEXT)"
+      "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')"
     ]:ex(c,s)
     c.commit()
     for s in [
@@ -226,80 +225,95 @@ def appup(key:str,name:str=Form(''),apk:UploadFile=File(...)):
     adm(key);fn=save(apk,'apk',{'.apk'});p=UPLOAD_DIR/fn;m=apkmeta(p);m['name']=name.strip() or m['name'];h=hashlib.sha256(p.read_bytes()).hexdigest();c=db();ex(c,'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(secrets.token_hex(8),m['name'],m['package_name'],m['version_name'],m['version_code'],fn,p.stat().st_size,h,now()));c.commit();c.close();return go('/admin/apps',key)
 
 
+LAUNCHER_UPDATE_META=UPLOAD_DIR/'launcher_update.json'
+
+def _load_launcher_update():
+    try:
+      if LAUNCHER_UPDATE_META.exists():
+        x=json.loads(LAUNCHER_UPDATE_META.read_text(encoding='utf-8'))
+        return x if isinstance(x,dict) else None
+    except Exception:
+      pass
+    return None
+
+def _save_launcher_update(x):
+    tmp=UPLOAD_DIR/'launcher_update.tmp'
+    tmp.write_text(json.dumps(x,ensure_ascii=False,indent=2),encoding='utf-8')
+    tmp.replace(LAUNCHER_UPDATE_META)
+
 @app.get('/admin/launcher-update',response_class=HTMLResponse)
 def launcher_update_page(key:str=''):
     adm(key)
-    c=db()
-    uu=rows(c,'SELECT * FROM launcher_updates ORDER BY version_code DESC, created_at DESC')
-    c.close()
-    cards=''
-    for u in uu:
+    u=_load_launcher_update()
+    card=''
+    if u:
       status='PUBLICADA' if u.get('published') else 'DESATIVADA'
       mandatory='OBRIGATÓRIA' if u.get('mandatory') else 'OPCIONAL'
-      cards+=f'''<div class="card"><h3>Versão {u["version_name"]} <span class="ok">{status}</span></h3><div class="muted">Código {u["version_code"]} • {mandatory} • {u.get("created_at") or "-"}</div><div>{u.get("notes") or ""}</div><div class="nav"><a href="/api/launcher/{u["id"]}/download">Baixar APK</a><form method="post" action="/admin/launcher-update/{u["id"]}/toggle?key={key}" style="display:inline"><button>{'Despublicar' if u.get('published') else 'Publicar'}</button></form></div></div>'''
+      card=f'''<div class="card"><h3>Versão {u.get("version_name","-")} <span class="ok">{status}</span></h3><div class="muted">Código {u.get("version_code","-")} • {mandatory} • {u.get("created_at","-")}</div><div>{u.get("notes","")}</div><div class="nav"><a href="/api/launcher/download">Baixar APK</a><form method="post" action="/admin/launcher-update/toggle?key={key}" style="display:inline"><button>{'Despublicar' if u.get('published') else 'Publicar'}</button></form></div></div>'''
     form=f'''<div class="card"><h3>Publicar nova atualização</h3><form enctype="multipart/form-data" method="post" action="/admin/launcher-update/publish?key={key}"><input name="version_name" placeholder="Versão, ex: 2.5.6" required><input name="version_code" type="number" placeholder="Código da versão, ex: 256" required><textarea name="notes" placeholder="Notas da atualização"></textarea><label><input style="width:auto" type="checkbox" name="mandatory" value="1"> Atualização obrigatória</label><input type="file" name="apk" accept=".apk" required><button>PUBLICAR ATUALIZAÇÃO</button></form></div>'''
-    return page('Atualização da Launcher',form+(cards or '<div class="card">Nenhuma atualização publicada.</div>'),key)
+    return page('Atualização da Launcher',form+(card or '<div class="card">Nenhuma atualização publicada.</div>'),key)
 
 @app.post('/admin/launcher-update/publish')
 def launcher_update_publish(key:str,version_name:str=Form(...),version_code:int=Form(...),notes:str=Form(''),mandatory:Optional[str]=Form(None),apk:UploadFile=File(...)):
     adm(key)
     if version_code < 1: raise HTTPException(400,'version_code inválido')
+    old=_load_launcher_update() or {}
+    oldfile=UPLOAD_DIR/str(old.get('filename') or '')
     fn=save(apk,'launcher_update',{'.apk'})
     p=UPLOAD_DIR/fn
-    h=hashlib.sha256(p.read_bytes()).hexdigest()
-    c=db()
-    try:
-      ex(c,'UPDATE launcher_updates SET published=0 WHERE published=1')
-      ex(c,'INSERT INTO launcher_updates(id,version_name,version_code,filename,size_bytes,sha256,mandatory,published,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(secrets.token_hex(8),version_name.strip(),version_code,fn,p.stat().st_size,h,1 if mandatory else 0,1,notes.strip(),now()))
-      c.commit()
-    except Exception:
-      c.rollback(); c.close()
-      try:p.unlink()
+    x={
+      'id':secrets.token_hex(8),
+      'version_name':version_name.strip(),
+      'version_code':int(version_code),
+      'filename':fn,
+      'size_bytes':p.stat().st_size,
+      'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
+      'mandatory':bool(mandatory),
+      'published':True,
+      'notes':notes.strip(),
+      'created_at':now()
+    }
+    _save_launcher_update(x)
+    if oldfile.exists() and oldfile != p:
+      try:oldfile.unlink()
       except Exception:pass
-      raise
-    c.close()
     return go('/admin/launcher-update',key)
 
-@app.post('/admin/launcher-update/{uid}/toggle')
-def launcher_update_toggle(uid:str,key:str):
+@app.post('/admin/launcher-update/toggle')
+def launcher_update_toggle(key:str):
     adm(key)
-    c=db()
-    u=one(c,'SELECT * FROM launcher_updates WHERE id=?',(uid,))
-    if not u:
-      c.close(); raise HTTPException(404)
-    newv=0 if u.get('published') else 1
-    if newv:
-      ex(c,'UPDATE launcher_updates SET published=0')
-    ex(c,'UPDATE launcher_updates SET published=? WHERE id=?',(newv,uid))
-    c.commit(); c.close()
+    u=_load_launcher_update()
+    if not u: raise HTTPException(404)
+    u['published']=not bool(u.get('published'))
+    _save_launcher_update(u)
     return go('/admin/launcher-update',key)
 
-@app.get('/api/launcher/{uid}/download')
-def launcher_update_download(uid:str):
-    c=db();u=one(c,'SELECT * FROM launcher_updates WHERE id=?',(uid,));c.close()
+@app.get('/api/launcher/download')
+def launcher_update_download():
+    u=_load_launcher_update()
     if not u: raise HTTPException(404)
-    p=UPLOAD_DIR/u['filename']
+    p=UPLOAD_DIR/str(u.get('filename') or '')
     if not p.exists(): raise HTTPException(404,'APK não encontrado')
-    return FileResponse(p,media_type='application/vnd.android.package-archive',filename=f'BBL_BOXTV_{u["version_name"]}.apk')
+    return FileResponse(p,media_type='application/vnd.android.package-archive',filename=f'BBL_BOXTV_{u.get("version_name","update")}.apk')
 
 @app.get('/api/devices/{did}/launcher-update')
 def launcher_update_check(did:str,current_version_code:int=0,authorization:Optional[str]=Header(None)):
     c=db()
     authdev(c,did,authorization)
-    u=one(c,'SELECT * FROM launcher_updates WHERE published=1 ORDER BY version_code DESC, created_at DESC LIMIT 1')
     c.close()
-    if not u:
+    u=_load_launcher_update()
+    if not u or not u.get('published'):
       return {'update_available':False}
     available=int(u.get('version_code') or 0) > int(current_version_code or 0)
     return {
       'update_available':available,
-      'version_name':u['version_name'],
-      'version_code':int(u['version_code']),
+      'version_name':u.get('version_name') or '',
+      'version_code':int(u.get('version_code') or 0),
       'mandatory':bool(u.get('mandatory')),
       'notes':u.get('notes') or '',
       'size_bytes':int(u.get('size_bytes') or 0),
       'sha256':u.get('sha256') or '',
-      'download_url':f'/api/launcher/{u["id"]}/download' if available else ''
+      'download_url':'/api/launcher/download' if available else ''
     }
 
 @app.get('/admin/layouts',response_class=HTMLResponse)
