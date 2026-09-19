@@ -109,15 +109,27 @@ def enroll(b:Enroll):
 def payload(c,d):
     ids=[];lay=None
     v55=_load_v55()
-    if v55 and d.get('id') in set(v55.get('device_ids') or []):
+    lv=(d.get('launcher_version') or '').strip()
+    v55_devices=set(v55.get('device_ids') or []) if v55 else set()
+    use_v55=bool(v55) and (d.get('id') in v55_devices or lv.startswith('2.5.5') or lv.startswith('5.5'))
+    if use_v55:
       ids=list(v55.get('app_ids') or [])[:20]
     elif d.get('layout_id'):
       lay=one(c,'SELECT * FROM layouts WHERE id=?',(d['layout_id'],));ids=json.loads((lay or {}).get('app_ids') or '[]')
     if not ids:ids=json.loads(d.get('allowed_apps') or '[]')
     aa=[]
-    for i in ids:
+    for i in ids[:20]:
       a=one(c,'SELECT * FROM apps WHERE id=? OR package_name=?',(i,i))
       if a:aa.append({k:a.get(k) for k in ('id','name','package_name','version_name','version_code','size_bytes','sha256')}|{'download_url':f"/api/apps/{a['id']}/download"})
+    # A tela principal da V5.5 usa o primeiro item que contenha "unitv".
+    # Prioriza explicitamente UniTV Free para não cair no UniTV Pro.
+    def _v55_priority(x):
+      s=((x.get('name') or '')+' '+(x.get('package_name') or '')).lower()
+      if 'unitv' in s and 'free' in s:return 0
+      if 'unitv' in s:return 2
+      return 1
+    if use_v55:
+      aa.sort(key=_v55_priority)
     expired=False
     if d.get('expires_at'):
       try:expired=datetime.fromisoformat(d['expires_at'].replace('Z','+00:00'))<datetime.now(timezone.utc)
