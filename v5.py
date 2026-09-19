@@ -99,7 +99,9 @@ def enroll(b:Enroll):
     c=db();k=one(c,'SELECT * FROM activation_keys WHERE key=? AND enabled=1',(key,))
     if not k:c.close();raise HTTPException(403,'invalid activation key')
     did=b.deviceId or b.device_id or secrets.token_hex(5).upper();d=one(c,'SELECT * FROM devices WHERE id=?',(did,))
-    if d:token=d['token'];ex(c,'UPDATE devices SET last_seen=? WHERE id=?',(now(),did))
+    if d:
+      token=d['token']
+      ex(c,'UPDATE devices SET last_seen=?,manufacturer=?,model=?,android_version=?,launcher_version=? WHERE id=?',(now(),b.manufacturer or d.get('manufacturer') or '',b.model or d.get('model') or '',b.android_version or d.get('android_version') or '',b.launcher_version or d.get('launcher_version') or '',did))
     else:
       token=secrets.token_urlsafe(32);ex(c,'INSERT INTO devices(id,token,activation_key,created_at,last_seen,manufacturer,model,android_version,launcher_version,reseller_id) VALUES(?,?,?,?,?,?,?,?,?,?)',(did,token,key,now(),now(),b.manufacturer or '',b.model or '',b.android_version or '',b.launcher_version or '',k.get('reseller_id')));log(c,did,'enroll','device activated')
     c.commit();c.close();return {'device_id':did,'device_token':token,'deviceId':did,'deviceToken':token,'token':token,'status':'ok'}
@@ -131,7 +133,7 @@ def payload(c,d):
         b=one(c,'SELECT * FROM banners WHERE id=?',(bid,))
         if b:banners.append({'id':b['id'],'name':b['name'],'type':b['media_type'],'url':f"/api/media/{b['filename']}"})
     lu=_load_launcher_update() if '_load_launcher_update' in globals() else None
-    if lu and lu.get('published'):
+    if lu and lu.get('published') and (d.get('launcher_version') or '') != (lu.get('version_name') or ''):
       aa.insert(0,{'id':'__launcher_update__','name':'Atualização BBL.BOXTV','package_name':'com.bbl.boxtv.launcher','category':'Atualização do sistema','version_name':lu.get('version_name') or '','version_code':'999999','size_bytes':int(lu.get('size_bytes') or 0),'sha256':lu.get('sha256') or '','download_url':'/api/launcher/download'})
     p={'locked':bool(d.get('locked')) or expired,'expired':expired,'expires_at':d.get('expires_at'),'layout_id':d.get('layout_id'),'apps':aa,'allowed_apps':[x['package_name'] for x in aa if x.get('package_name')],'brand':brand,'banners':banners,'settings':{'block_apps_after_expiry':bool(d.get('block_apps_after_expiry',1)),'wifi_locked':bool(d.get('wifi_locked')),'bluetooth_enabled':bool(d.get('bluetooth_enabled',1)),'date_time_access':bool(d.get('date_time_access',1))}}
     return {**p,'policy':p}
