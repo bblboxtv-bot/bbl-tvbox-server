@@ -17,7 +17,33 @@ def pg():return DATABASE_URL.startswith(('postgres://','postgresql://'))
 def db():
     if pg():
         import psycopg
-        return psycopg.connect(DATABASE_URL.replace('postgres://','postgresql://',1),autocommit=False)
+        from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+        url=DATABASE_URL.replace('postgres://','postgresql://',1)
+        try:
+            return psycopg.connect(url,autocommit=False)
+        except Exception as first_error:
+            try:
+                u=urlsplit(url)
+                host=u.hostname or ''
+                if host.startswith('dpg-') and '.' not in host:
+                    ext_host=host+'.virginia-postgres.render.com'
+                    netloc=''
+                    if u.username:
+                        from urllib.parse import quote
+                        netloc=quote(u.username,safe='')
+                        if u.password is not None:
+                            netloc+=':'+quote(u.password,safe='')
+                        netloc+='@'
+                    netloc+=ext_host
+                    if u.port:
+                        netloc+=':'+str(u.port)
+                    q=dict(parse_qsl(u.query,keep_blank_values=True))
+                    q['sslmode']='require'
+                    fallback=urlunsplit((u.scheme,netloc,u.path,urlencode(q),u.fragment))
+                    return psycopg.connect(fallback,autocommit=False)
+            except Exception:
+                pass
+            raise first_error
     import sqlite3
     p=DATABASE_URL.replace('sqlite:///','',1) if DATABASE_URL.startswith('sqlite:///') else DATABASE_URL
     c=sqlite3.connect(p);c.row_factory=sqlite3.Row;return c
