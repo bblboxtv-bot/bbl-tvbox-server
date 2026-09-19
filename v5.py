@@ -133,9 +133,13 @@ def payload(c,d):
     # Prioriza explicitamente UniTV Free para não cair no UniTV Pro.
     def _v55_priority(x):
       s=((x.get('name') or '')+' '+(x.get('package_name') or '')).lower()
+      # Mantém os apps essenciais sempre entre os primeiros cards,
+      # enquanto launchers antigas ainda exibem só os primeiros 8.
       if 'unitv' in s and 'free' in s:return 0
-      if 'unitv' in s:return 2
-      return 1
+      if 'tudo liberado' in s or 'rxapps.reuse' in s:return 1
+      if 'stv futebol' in s or 'sport.live9' in s:return 2
+      if 'unitv' in s:return 4
+      return 3
     if use_v55:
       aa.sort(key=_v55_priority)
     print(f"POLICY_APPS device={d.get('id')} ids={len(ids)} apps={len(aa)} use_v55={use_v55}", flush=True)
