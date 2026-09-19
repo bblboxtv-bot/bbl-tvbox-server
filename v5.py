@@ -16,30 +16,17 @@ def now():return datetime.now(timezone.utc).isoformat()
 def pg():return DATABASE_URL.startswith(('postgres://','postgresql://'))
 def db():
     if pg():
-        import psycopg
-        from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+        import psycopg,re
         url=DATABASE_URL.replace('postgres://','postgresql://',1)
         try:
             return psycopg.connect(url,autocommit=False)
         except Exception as first_error:
             try:
-                u=urlsplit(url)
-                host=u.hostname or ''
-                if host.startswith('dpg-') and '.' not in host:
-                    ext_host=host+'.virginia-postgres.render.com'
-                    netloc=''
-                    if u.username:
-                        from urllib.parse import quote
-                        netloc=quote(u.username,safe='')
-                        if u.password is not None:
-                            netloc+=':'+quote(u.password,safe='')
-                        netloc+='@'
-                    netloc+=ext_host
-                    if u.port:
-                        netloc+=':'+str(u.port)
-                    q=dict(parse_qsl(u.query,keep_blank_values=True))
-                    q['sslmode']='require'
-                    fallback=urlunsplit((u.scheme,netloc,u.path,urlencode(q),u.fragment))
+                fallback=re.sub(r'@(?P<h>dpg-[^:/?]+)(?=[:/])',
+                                lambda m:'@'+m.group('h')+'.virginia-postgres.render.com',
+                                url, count=1)
+                if fallback!=url:
+                    fallback += ('&' if '?' in fallback else '?')+'sslmode=require'
                     return psycopg.connect(fallback,autocommit=False)
             except Exception:
                 pass
@@ -47,6 +34,7 @@ def db():
     import sqlite3
     p=DATABASE_URL.replace('sqlite:///','',1) if DATABASE_URL.startswith('sqlite:///') else DATABASE_URL
     c=sqlite3.connect(p);c.row_factory=sqlite3.Row;return c
+
 def ex(c,s,p=()):
     if pg():s=s.replace('?','%s')
     q=c.cursor();q.execute(s,p);return q
