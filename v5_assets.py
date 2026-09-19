@@ -29,6 +29,7 @@ def assets(key: str = ''):
     apps = v5.rows(c, 'SELECT * FROM apps ORDER BY created_at DESC')
     banners = v5.rows(c, 'SELECT * FROM banners ORDER BY created_at DESC')
     walls = v5.rows(c, 'SELECT * FROM wallpapers ORDER BY created_at DESC')
+    logos = v5.rows(c, 'SELECT * FROM logos ORDER BY created_at DESC')
     c.close()
 
     def cards(items, kind):
@@ -52,6 +53,7 @@ def assets(key: str = ''):
         f'<h2>Aplicativos</h2><div class="grid">{cards(apps, "app")}</div>'
         f'<h2>Banners</h2><div class="grid">{cards(banners, "banner")}</div>'
         f'<h2>Planos de fundo</h2><div class="grid">{cards(walls, "wallpaper")}</div>'
+        f'<h2>Logomarcas</h2><div class="grid">{cards(logos, "logo")}</div>'
     )
     return v5.page('Excluir itens', body, key)
 
@@ -98,6 +100,7 @@ def del_banner(bid: str, key: str):
             ids = []
         v5.ex(c, 'UPDATE layouts SET banner_ids=? WHERE id=?', (json.dumps([x for x in ids if x != bid]), l['id']))
     v5.ex(c, 'DELETE FROM banners WHERE id=?', (bid,))
+    v5.ex(c, 'DELETE FROM media_files WHERE filename=?', (b.get('filename') or '',))
     c.commit()
     c.close()
     _unlink(b.get('filename'))
@@ -113,7 +116,24 @@ def del_wallpaper(wid: str, key: str):
         raise HTTPException(404)
     v5.ex(c, 'UPDATE layouts SET wallpaper_id=NULL WHERE wallpaper_id=?', (wid,))
     v5.ex(c, 'DELETE FROM wallpapers WHERE id=?', (wid,))
+    v5.ex(c, 'DELETE FROM media_files WHERE filename=?', (w.get('filename') or '',))
     c.commit()
     c.close()
     _unlink(w.get('filename'))
+    return _go(key)
+
+@app.post('/admin/assets/logo/{lid}/delete')
+def del_logo(lid: str, key: str):
+    _ok(key)
+    c = v5.db()
+    x = v5.one(c, 'SELECT * FROM logos WHERE id=?', (lid,))
+    if not x:
+        c.close()
+        raise HTTPException(404)
+    v5.ex(c, 'UPDATE layouts SET logo_id=NULL WHERE logo_id=?', (lid,))
+    v5.ex(c, 'DELETE FROM logos WHERE id=?', (lid,))
+    v5.ex(c, 'DELETE FROM media_files WHERE filename=?', (x.get('filename') or '',))
+    c.commit()
+    c.close()
+    _unlink(x.get('filename'))
     return _go(key)
