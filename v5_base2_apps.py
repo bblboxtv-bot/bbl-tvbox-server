@@ -113,6 +113,63 @@ def save_app(apk, name):
     return aid
 
 
+
+def replace_app_file(app_id, apk):
+    fn = v5.save(apk, 'apk', {'.apk'})
+    p = v5.UPLOAD_DIR / fn
+    data = p.read_bytes()
+    if not data:
+        p.unlink(missing_ok=True)
+        raise HTTPException(400, 'APK vazio')
+    if len(data) > 120 * 1024 * 1024:
+        p.unlink(missing_ok=True)
+        raise HTTPException(413, 'APK maior que 120 MB')
+
+    h = hashlib.sha256(data).hexdigest()
+    m = v5.apkmeta(p)
+
+    # Marca como indisponível enquanto regrava e limpa somente os blocos desse app.
+    c = v5.db()
+    app = v5.one(c, 'SELECT * FROM apps WHERE id=?', (app_id,))
+    if not app:
+        c.close()
+        p.unlink(missing_ok=True)
+        raise HTTPException(404, 'Aplicativo não encontrado')
+
+    v5.ex(c, 'DELETE FROM base2_app_chunks WHERE app_id=?', (app_id,))
+    v5.ex(c, 'DELETE FROM base2_app_files WHERE app_id=?', (app_id,))
+    v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
+          (app_id, len(data), h, (len(data)+CHUNK_SIZE-1)//CHUNK_SIZE, 0, v5.now()))
+    c.commit()
+    c.close()
+
+    try:
+        for idx, pos in enumerate(range(0, len(data), CHUNK_SIZE)):
+            _put_chunk(app_id, idx, data[pos:pos+CHUNK_SIZE])
+
+        c = v5.db()
+        v5.ex(c, 'UPDATE apps SET package_name=?,version_name=?,version_code=?,filename=?,size_bytes=?,sha256=? WHERE id=?',
+              (m.get('package_name') or app.get('package_name') or '',
+               m.get('version_name') or app.get('version_name') or '',
+               m.get('version_code') or app.get('version_code') or '',
+               fn, len(data), h, app_id))
+        v5.ex(c, 'UPDATE base2_app_files SET ready=1 WHERE app_id=?', (app_id,))
+        c.commit()
+        c.close()
+    except Exception:
+        c = v5.db()
+        v5.ex(c, 'UPDATE base2_app_files SET ready=0 WHERE app_id=?', (app_id,))
+        c.commit()
+        c.close()
+        raise HTTPException(503, 'Falha temporária ao salvar APK. Tente novamente.')
+
+    try:
+        p.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return app_id
+
+
 def app_cards(rows):
     return ''.join(f'<div class="card"><b>{admin.esc(a["name"])}</b><br><span class="muted">{admin.esc(a.get("package_name") or "-")} • versão {admin.esc(a.get("version_name") or "-")} • APK SALVO</span></div>' for a in rows) or '<div class="card muted">Nenhum APK salvo. Use “Adicionar APK”.</div>'
 
