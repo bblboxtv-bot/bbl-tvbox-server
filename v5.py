@@ -131,7 +131,7 @@ def payload(c,d):
         b=one(c,'SELECT * FROM banners WHERE id=?',(bid,))
         if b:banners.append({'id':b['id'],'name':b['name'],'type':b['media_type'],'url':f"/api/media/{b['filename']}"})
     p={'locked':bool(d.get('locked')) or expired,'expired':expired,'expires_at':d.get('expires_at'),'layout_id':d.get('layout_id'),'apps':aa,'allowed_apps':[x['package_name'] for x in aa if x.get('package_name')],'brand':brand,'banners':banners,'settings':{'block_apps_after_expiry':bool(d.get('block_apps_after_expiry',1)),'wifi_locked':bool(d.get('wifi_locked')),'bluetooth_enabled':bool(d.get('bluetooth_enabled',1)),'date_time_access':bool(d.get('date_time_access',1))}}
-    return {**p,'message':d.get('display_name') or '','display_name':d.get('display_name') or '','client_name':d.get('display_name') or '','policy':p}
+    return {**p,'policy':p}
 @app.api_route('/api/devices/{did}/policy',methods=['GET','POST'])
 def policy(did:str,authorization:Optional[str]=Header(None)):
     c=db();d=authdev(c,did,authorization);ex(c,'UPDATE devices SET last_seen=? WHERE id=?',(now(),did));c.commit();o=payload(c,d);c.close();return o
