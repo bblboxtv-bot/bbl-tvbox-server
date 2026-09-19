@@ -31,12 +31,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build release APK
+      - name: Build signed debug APK
         working-directory: launcher_build/work
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BBL_BOXTV_2.5.6_ATUALIZAR_UNSIGNED
-          path: launcher_build/work/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: BBL_BOXTV_2.5.6_UI_TEST_SIGNED
+          path: launcher_build/work/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
