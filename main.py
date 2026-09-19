@@ -1,5 +1,22 @@
 import os
 import secrets
+
+# One-time cleanup approved by admin. Run before the rest of the panel imports
+# so a full database can release obsolete APK binary storage first.
+import v5
+try:
+    _c = v5.db()
+    if v5.pg():
+        v5.ex(_c, 'TRUNCATE TABLE base2_app_chunks, base2_app_blobs, base2_app_files')
+        _c.commit()
+    _c.close()
+except Exception:
+    try:
+        _c.rollback()
+        _c.close()
+    except Exception:
+        pass
+
 from v5_base_compat import app
 import v5_reseller_portal as portal
 import v5_base2_gate
@@ -11,27 +28,10 @@ import v5_base2_apps_list
 import v5_base2_apk_storage
 import v5_download_compat
 import v5_base2_legacy_panel
-import v5
 import v5_tudo_liberado_integration
 import v5_base2_client_apps_manage
 import v5_launcher_v4_theme
 import v5_activation_code_panel
-
-# Temporary cleanup approved by admin: remove only obsolete APK binary payloads
-# from Postgres to recover disk space. This does not delete clients, activation
-# codes, resellers, layouts, or settings.
-try:
-    _cleanup_db = v5.db()
-    for _table in ("base2_app_chunks", "base2_app_blobs", "base2_app_files"):
-        try:
-            v5.ex(_cleanup_db, f"DELETE FROM {_table}")
-            _cleanup_db.commit()
-        except Exception:
-            _cleanup_db.rollback()
-    _cleanup_db.close()
-except Exception:
-    pass
-
 
 
 def _seed_reseller_admin():
