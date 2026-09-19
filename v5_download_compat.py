@@ -54,7 +54,7 @@ def persistent_upload(key: str, name: str = Form(''), apk: UploadFile = File(...
     h = hashlib.sha256(data).hexdigest()
 
     c = v5.db()
-    used = v5.one(c, "SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%'") or {'total': 0}
+    used = v5.one(c, "SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%%'") or {'total': 0}
     if int(used.get('total') or 0) + size > 450 * 1024 * 1024:
         c.close()
         p.unlink(missing_ok=True)
