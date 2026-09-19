@@ -2,6 +2,9 @@ import os
 import secrets
 # panel bootstrap
 from v5_base_compat import app
+import v5
+# Ensure core tables exist before integration modules query them during import.
+v5.init()
 import v5_reseller_portal as portal
 import v5_base2_gate
 import v5_base2_reseller_portal
