@@ -186,7 +186,17 @@ def dupdate(did:str,key:str,display_name:str=Form(''),expires_at:str=Form(''),la
     adm(key);c=db();ex(c,'UPDATE devices SET display_name=?,expires_at=?,layout_id=?,block_apps_after_expiry=?,wifi_locked=?,bluetooth_enabled=? WHERE id=?',(display_name.strip(),expires_at.strip() or None,layout_id or None,1 if block_apps_after_expiry else 0,1 if wifi_locked else 0,1 if bluetooth_enabled else 0,did));log(c,did,'device_update','settings');c.commit();c.close();return go(f'/admin/device/{did}',key)
 @app.post('/admin/device/{did}/toggle')
 def toggle(did:str,key:str):
-    adm(key);c=db();d=one(c,'SELECT locked FROM devices WHERE id=?',(did,));ex(c,'UPDATE devices SET locked=? WHERE id=?',(0 if d and d['locked'] else 1,did));log(c,did,'lock','toggle');c.commit();c.close();return go(f'/admin/device/{did}',key)
+    adm(key)
+    c=db()
+    try:
+        d=one(c,'SELECT locked FROM devices WHERE id=?',(did,))
+        ex(c,'UPDATE devices SET locked=? WHERE id=?',(0 if d and d['locked'] else 1,did))
+        # Do not write an audit log here: a full logs table/storage must not block
+        # the critical lock/unlock action.
+        c.commit()
+    finally:
+        c.close()
+    return go(f'/admin/device/{did}',key)
 @app.post('/admin/device/{did}/notify')
 def dnotify(did:str,key:str,title:str=Form(...),message:str=Form(...)):
     adm(key);c=db();ex(c,'INSERT INTO notifications(id,device_id,title,message,created_at) VALUES(?,?,?,?,?)',(secrets.token_hex(8),did,title,message,now()));log(c,did,'notification',title);c.commit();c.close();return go(f'/admin/device/{did}',key)
