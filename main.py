@@ -1,40 +1,51 @@
 import os
 import secrets
 import time
-import v5
+import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
-# TEMPORARY emergency cleanup: free Postgres disk before loading panel modules.
-# Approved by admin. Only obsolete APK binary storage is cleared.
-_cleanup_ok = False
-_cleanup_last = None
-for _attempt in range(30):
-    c = None
-    try:
-        c = v5.db()
-        for _table in ("base2_app_chunks","base2_app_blobs","base2_app_files"):
-            try:
-                v5.ex(c, f"TRUNCATE TABLE {_table}")
-                c.commit()
-                print("CLEANUP_OK", _table)
-            except Exception as _e:
-                try: c.rollback()
-                except Exception: pass
-                print("CLEANUP_TABLE_ERROR", _table, type(_e).__name__, str(_e))
-        try: c.close()
-        except Exception: pass
-        _cleanup_ok = True
-        break
-    except Exception as _e:
-        _cleanup_last = _e
+# TEMPORARY emergency cleanup approved by admin.
+# Runs before panel imports and clears only obsolete APK binary storage.
+_dburl=(os.getenv('DATABASE_URL') or '').replace('postgres://','postgresql://',1)
+_cleanup_ok=False
+_cleanup_last=None
+for _attempt in range(40):
+    for _mode in ('internal','external'):
+        c=None
         try:
-            if c: c.close()
-        except Exception:
-            pass
-        print("CLEANUP_CONNECT_RETRY", _attempt + 1, type(_e).__name__, str(_e))
-        time.sleep(2)
-
+            params=conninfo_to_dict(_dburl)
+            host=(params.get('host') or '').strip()
+            if _mode=='external' and host.startswith('dpg-') and '.' not in host:
+                params['host']=host+'.virginia-postgres.render.com'
+                params['sslmode']='require'
+            params['connect_timeout']='2'
+            c=psycopg.connect(autocommit=False,**params)
+            print('CLEANUP_CONNECTED',_mode)
+            for _table in ('base2_app_chunks','base2_app_blobs','base2_app_files'):
+                try:
+                    cur=c.cursor()
+                    cur.execute(f'TRUNCATE TABLE {_table}')
+                    c.commit()
+                    print('CLEANUP_OK',_table)
+                except Exception as _e:
+                    try:c.rollback()
+                    except Exception:pass
+                    print('CLEANUP_TABLE_ERROR',_table,type(_e).__name__,str(_e))
+            try:c.close()
+            except Exception:pass
+            _cleanup_ok=True
+            break
+        except Exception as _e:
+            _cleanup_last=_e
+            try:
+                if c:c.close()
+            except Exception:pass
+            print('CLEANUP_CONNECT_RETRY',_attempt+1,_mode,type(_e).__name__,str(_e))
+    if _cleanup_ok:
+        break
+    time.sleep(1)
 if not _cleanup_ok:
-    print("CLEANUP_GAVE_UP", type(_cleanup_last).__name__ if _cleanup_last else "unknown", str(_cleanup_last) if _cleanup_last else "")
+    print('CLEANUP_GAVE_UP',type(_cleanup_last).__name__ if _cleanup_last else 'unknown',str(_cleanup_last) if _cleanup_last else '')
 
 from v5_base_compat import app
 import v5_reseller_portal as portal
