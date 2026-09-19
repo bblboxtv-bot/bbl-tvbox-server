@@ -1,5 +1,6 @@
 import os
 import secrets
+# panel bootstrap
 from v5_base_compat import app
 import v5_reseller_portal as portal
 import v5_base2_gate
