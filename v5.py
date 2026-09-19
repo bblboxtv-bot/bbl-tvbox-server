@@ -116,10 +116,14 @@ def payload(c,d):
     lv=(d.get('launcher_version') or '').strip()
     v55_devices=set(v55.get('device_ids') or []) if v55 else set()
     use_v55=bool(v55) and (d.get('id') in v55_devices or lv.startswith('2.5.5') or lv.startswith('5.5'))
+    # Sempre carrega o layout para branding (fundo/logo/banner), mesmo quando
+    # os aplicativos vêm do perfil V5.5.
+    if d.get('layout_id'):
+      lay=one(c,'SELECT * FROM layouts WHERE id=?',(d['layout_id'],))
     if use_v55:
       ids=list(v55.get('app_ids') or [])[:20]
-    elif d.get('layout_id'):
-      lay=one(c,'SELECT * FROM layouts WHERE id=?',(d['layout_id'],));ids=json.loads((lay or {}).get('app_ids') or '[]')
+    elif lay:
+      ids=json.loads((lay or {}).get('app_ids') or '[]')
     if not ids:ids=json.loads(d.get('allowed_apps') or '[]')
     aa=[]
     for i in ids[:20]:
