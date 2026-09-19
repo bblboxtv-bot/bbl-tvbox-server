@@ -41,34 +41,9 @@ def persistent_download(aid: str):
 
 def persistent_upload(key: str, name: str = Form(''), apk: UploadFile = File(...)):
     v5.adm(key)
-    fn = v5.save(apk, 'apk', {'.apk'})
-    p = v5.UPLOAD_DIR / fn
-    size = p.stat().st_size
-    if size > 120 * 1024 * 1024:
-        p.unlink(missing_ok=True)
-        raise HTTPException(413, 'APK maior que 120 MB')
-
-    m = v5.apkmeta(p)
-    m['name'] = name.strip() or m['name']
-    data = p.read_bytes()
-    h = hashlib.sha256(data).hexdigest()
-
-    c = v5.db()
-    used = v5.one(c, "SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%%'") or {'total': 0}
-    if int(used.get('total') or 0) + size > 450 * 1024 * 1024:
-        c.close()
-        p.unlink(missing_ok=True)
-        raise HTTPException(507, 'Limite seguro de 450 MB para APKs persistentes atingido')
-
-    aid = secrets.token_hex(8)
-    v5.ex(c, 'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
-          (aid, m['name'], m['package_name'], m['version_name'], m['version_code'], fn, size, h, v5.now()))
-    v5.ex(c, 'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',
-          (fn, 'application/vnd.android.package-archive', size, data, v5.now()))
-    c.commit()
-    c.close()
+    import v5_base2_apps as base2apps
+    base2apps.save_app(apk, name)
     return RedirectResponse('/admin/apps?key=' + key, 303)
-
 
 def add_priority_route(path, endpoint, methods):
     v5.app.add_api_route(path, endpoint, methods=methods)
