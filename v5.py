@@ -51,7 +51,8 @@ def init():
       "CREATE TABLE IF NOT EXISTS banners(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,media_type TEXT NOT NULL DEFAULT 'image',created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS wallpapers(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,name TEXT NOT NULL,days INTEGER NOT NULL DEFAULT 30,price_cents INTEGER NOT NULL DEFAULT 0,layout_id TEXT,created_at TEXT)",
-      "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')"
+      "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')",
+      "CREATE TABLE IF NOT EXISTS launcher_v55_profile(id TEXT PRIMARY KEY,app_ids TEXT NOT NULL DEFAULT '[]',device_ids TEXT NOT NULL DEFAULT '[]',updated_at TEXT)"
     ]:ex(c,s)
     c.commit()
     for s in [
@@ -339,6 +340,21 @@ V55_LAYOUT_ID='bbl-v55-principal'
 V55_META=UPLOAD_DIR/'launcher_v55.json'
 
 def _load_v55():
+    # Fonte principal: banco. Assim o perfil não some em redeploy/restart.
+    try:
+      c=db()
+      r=one(c,"SELECT app_ids,device_ids,updated_at FROM launcher_v55_profile WHERE id='principal'")
+      c.close()
+      if r:
+        return {
+          'app_ids':json.loads(r.get('app_ids') or '[]'),
+          'device_ids':json.loads(r.get('device_ids') or '[]'),
+          'updated_at':r.get('updated_at')
+        }
+    except Exception:
+      try:c.close()
+      except Exception:pass
+    # Compatibilidade com o JSON antigo, caso ainda exista no filesystem.
     try:
       if V55_META.exists():
         x=json.loads(V55_META.read_text(encoding='utf-8'))
@@ -347,9 +363,23 @@ def _load_v55():
     return None
 
 def _save_v55(x):
-    tmp=UPLOAD_DIR/'launcher_v55.tmp'
-    tmp.write_text(json.dumps(x,ensure_ascii=False),encoding='utf-8')
-    tmp.replace(V55_META)
+    app_ids=list(dict.fromkeys(x.get('app_ids') or []))[:20]
+    device_ids=list(dict.fromkeys(x.get('device_ids') or []))
+    stamp=x.get('updated_at') or now()
+    c=db()
+    ex(c,"INSERT INTO launcher_v55_profile(id,app_ids,device_ids,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET app_ids=excluded.app_ids,device_ids=excluded.device_ids,updated_at=excluded.updated_at",
+       ('principal',json.dumps(app_ids),json.dumps(device_ids),stamp))
+    # Espelha a seleção em allowed_apps para cada box escolhida.
+    # Assim a box continua recebendo a lista completa mesmo se o perfil auxiliar falhar.
+    for did in device_ids:
+      ex(c,'UPDATE devices SET allowed_apps=? WHERE id=?',(json.dumps(app_ids),did))
+    c.commit();c.close()
+    # Mantém também o JSON como fallback local.
+    try:
+      tmp=UPLOAD_DIR/'launcher_v55.tmp'
+      tmp.write_text(json.dumps({'app_ids':app_ids,'device_ids':device_ids,'updated_at':stamp},ensure_ascii=False),encoding='utf-8')
+      tmp.replace(V55_META)
+    except Exception: pass
 
 @app.get('/admin/launcher-v55',response_class=HTMLResponse)
 def launcher_v55(key:str=''):
