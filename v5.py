@@ -137,7 +137,15 @@ def payload(c,d):
     aa=[]
     for i in ids[:20]:
       a=one(c,'SELECT * FROM apps WHERE id=? OR package_name=?',(i,i))
-      if a:aa.append({k:a.get(k) for k in ('id','name','package_name','version_name','version_code','size_bytes','sha256')}|{'download_url':f"/api/apps/{a['id']}/download"})
+      if a:
+        item={k:a.get(k) for k in ('id','name','package_name','version_name','version_code','size_bytes','sha256')}|{'download_url':f"/api/apps/{a['id']}/download"}
+        # Tudo Liberado usa o pacote com.rtxapps.reuse. Não forçar update por
+        # comparação de versionCode: algumas builds válidas usam versionCode 21
+        # e o painel pode ter metadado de outra build, causando loop "ATUALIZAR".
+        if (item.get('package_name') or '').lower()=='com.rtxapps.reuse':
+          item['name']='Tudo Liberado'
+          item['version_code']=0
+        aa.append(item)
     # A tela principal da V5.5 usa o primeiro item que contenha "unitv".
     # Prioriza explicitamente UniTV Free para não cair no UniTV Pro.
     def _v55_priority(x):
