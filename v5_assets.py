@@ -80,6 +80,7 @@ def del_app(aid: str, key: str):
         ids = [x for x in ids if x != aid and x != a.get('package_name')]
         v5.ex(c, 'UPDATE layouts SET app_ids=? WHERE id=?', (json.dumps(ids), l['id']))
     v5.ex(c, 'DELETE FROM apps WHERE id=?', (aid,))
+    v5.ex(c, 'DELETE FROM media_files WHERE filename=?', (a.get('filename') or '',))
     c.commit()
     c.close()
     _unlink(a.get('filename'))
