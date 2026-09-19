@@ -154,7 +154,7 @@ def payload(c,d):
       for bid in json.loads(lay.get('banner_ids') or '[]'):
         b=one(c,'SELECT * FROM banners WHERE id=?',(bid,))
         if b:banners.append({'id':b['id'],'name':b['name'],'type':b['media_type'],'url':f"/api/media/{b['filename']}"})
-    p={'locked':bool(d.get('locked')) or expired,'expired':expired,'expires_at':d.get('expires_at'),'layout_id':d.get('layout_id'),'apps':aa,'allowed_apps':[x['package_name'] for x in aa if x.get('package_name')],'brand':brand,'banners':banners,'settings':{'block_apps_after_expiry':bool(d.get('block_apps_after_expiry',1)),'wifi_locked':bool(d.get('wifi_locked')),'bluetooth_enabled':bool(d.get('bluetooth_enabled',1)),'date_time_access':bool(d.get('date_time_access',1))}}
+    p={'locked':bool(d.get('locked')) or expired,'expired':expired,'expires_at':d.get('expires_at'),'layout_id':d.get('layout_id'),'apps':aa,'allowed_apps':[x['package_name'] for x in aa if x.get('package_name')],'brand':brand,'branding':brand,'branding_name':brand.get('name') or 'BBL.BOXTV','logo_url':brand.get('logo_url') or '','wallpaper_url':brand.get('wallpaper_url') or '','message':brand.get('message') or '','banners':banners,'settings':{'block_apps_after_expiry':bool(d.get('block_apps_after_expiry',1)),'wifi_locked':bool(d.get('wifi_locked')),'bluetooth_enabled':bool(d.get('bluetooth_enabled',1)),'date_time_access':bool(d.get('date_time_access',1))}}
     return {**p,'policy':p}
 @app.api_route('/api/devices/{did}/policy',methods=['GET','POST'])
 def policy(did:str,authorization:Optional[str]=Header(None)):
