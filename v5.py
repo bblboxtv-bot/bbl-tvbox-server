@@ -58,7 +58,7 @@ def init():
     ]:ex(c,s)
     c.commit()
     for s in [
-      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE layouts ADD COLUMN logo_id TEXT"
+      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE layouts ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN wallpaper_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'"
     ]:col(c,s)
     try:ex(c,'INSERT INTO activation_keys(key,enabled,label,created_at) VALUES(?,?,?,?)',(ACTIVATION_KEY,1,'Chave padrão',now()));c.commit()
     except Exception:c.rollback()
@@ -149,15 +149,26 @@ def payload(c,d):
       if r:
         brand['name']=d.get('brand_name') or r.get('brand_name') or brand['name'];brand['wallpaper_url']=d.get('wallpaper_url') or r.get('wallpaper_url') or '';brand['logo_url']=d.get('logo_url') or r.get('logo_url') or '';brand['message']=d.get('message') or r.get('message') or ''
     banners=[]
+    if use_v55 and v55:
+      if v55.get('wallpaper_id'):
+        w=one(c,'SELECT filename FROM wallpapers WHERE id=?',(v55.get('wallpaper_id'),))
+        if w: brand['wallpaper_url']=f"/api/media/{w['filename']}"
+      if v55.get('logo_id'):
+        lg=one(c,'SELECT filename FROM logos WHERE id=?',(v55.get('logo_id'),))
+        if lg: brand['logo_url']=f"/api/media/{lg['filename']}"
+      for bid in (v55.get('banner_ids') or []):
+        b=one(c,'SELECT * FROM banners WHERE id=?',(bid,))
+        if b:banners.append({'id':b['id'],'name':b['name'],'type':b['media_type'],'url':f"/api/media/{b['filename']}"})
     if lay:
       if lay.get('wallpaper_id') and not brand['wallpaper_url']:
         w=one(c,'SELECT filename FROM wallpapers WHERE id=?',(lay['wallpaper_id'],));brand['wallpaper_url']=f"/api/media/{w['filename']}" if w else ''
       if lay.get('logo_id') and not brand['logo_url']:
         lg=one(c,'SELECT filename FROM logos WHERE id=?',(lay['logo_id'],));brand['logo_url']=f"/api/media/{lg['filename']}" if lg else ''
       elif lay.get('logo_url') and not brand['logo_url']:brand['logo_url']=lay['logo_url']
-      for bid in json.loads(lay.get('banner_ids') or '[]'):
-        b=one(c,'SELECT * FROM banners WHERE id=?',(bid,))
-        if b:banners.append({'id':b['id'],'name':b['name'],'type':b['media_type'],'url':f"/api/media/{b['filename']}"})
+      if not (use_v55 and v55 and (v55.get('banner_ids') or [])):
+        for bid in json.loads(lay.get('banner_ids') or '[]'):
+          b=one(c,'SELECT * FROM banners WHERE id=?',(bid,))
+          if b:banners.append({'id':b['id'],'name':b['name'],'type':b['media_type'],'url':f"/api/media/{b['filename']}"})
     p={'locked':bool(d.get('locked')) or expired,'expired':expired,'expires_at':d.get('expires_at'),'layout_id':d.get('layout_id'),'apps':aa,'allowed_apps':[x['package_name'] for x in aa if x.get('package_name')],'brand':brand,'branding':brand,'branding_name':brand.get('name') or 'BBL.BOXTV','logo_url':brand.get('logo_url') or '','wallpaper_url':brand.get('wallpaper_url') or '','message':brand.get('message') or '','banners':banners,'settings':{'block_apps_after_expiry':bool(d.get('block_apps_after_expiry',1)),'wifi_locked':bool(d.get('wifi_locked')),'bluetooth_enabled':bool(d.get('bluetooth_enabled',1)),'date_time_access':bool(d.get('date_time_access',1))}}
     return {**p,'policy':p}
 @app.api_route('/api/devices/{did}/policy',methods=['GET','POST'])
@@ -391,12 +402,15 @@ def _load_v55():
     # Fonte principal: banco. Assim o perfil não some em redeploy/restart.
     try:
       c=db()
-      r=one(c,"SELECT app_ids,device_ids,updated_at FROM launcher_v55_profile WHERE id='principal'")
+      r=one(c,"SELECT app_ids,device_ids,wallpaper_id,logo_id,banner_ids,updated_at FROM launcher_v55_profile WHERE id='principal'")
       c.close()
       if r:
         return {
           'app_ids':json.loads(r.get('app_ids') or '[]'),
           'device_ids':json.loads(r.get('device_ids') or '[]'),
+          'wallpaper_id':r.get('wallpaper_id') or '',
+          'logo_id':r.get('logo_id') or '',
+          'banner_ids':json.loads(r.get('banner_ids') or '[]'),
           'updated_at':r.get('updated_at')
         }
     except Exception:
@@ -413,10 +427,13 @@ def _load_v55():
 def _save_v55(x):
     app_ids=list(dict.fromkeys(x.get('app_ids') or []))[:20]
     device_ids=list(dict.fromkeys(x.get('device_ids') or []))
+    wallpaper_id=(x.get('wallpaper_id') or '').strip()
+    logo_id=(x.get('logo_id') or '').strip()
+    banner_ids=list(dict.fromkeys(x.get('banner_ids') or []))
     stamp=x.get('updated_at') or now()
     c=db()
-    ex(c,"INSERT INTO launcher_v55_profile(id,app_ids,device_ids,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET app_ids=excluded.app_ids,device_ids=excluded.device_ids,updated_at=excluded.updated_at",
-       ('principal',json.dumps(app_ids),json.dumps(device_ids),stamp))
+    ex(c,"INSERT INTO launcher_v55_profile(id,app_ids,device_ids,wallpaper_id,logo_id,banner_ids,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET app_ids=excluded.app_ids,device_ids=excluded.device_ids,wallpaper_id=excluded.wallpaper_id,logo_id=excluded.logo_id,banner_ids=excluded.banner_ids,updated_at=excluded.updated_at",
+       ('principal',json.dumps(app_ids),json.dumps(device_ids),wallpaper_id or None,logo_id or None,json.dumps(banner_ids),stamp))
     # Espelha a seleção em allowed_apps para cada box escolhida.
     # Assim a box continua recebendo a lista completa mesmo se o perfil auxiliar falhar.
     for did in device_ids:
@@ -425,7 +442,7 @@ def _save_v55(x):
     # Mantém também o JSON como fallback local.
     try:
       tmp=UPLOAD_DIR/'launcher_v55.tmp'
-      tmp.write_text(json.dumps({'app_ids':app_ids,'device_ids':device_ids,'updated_at':stamp},ensure_ascii=False),encoding='utf-8')
+      tmp.write_text(json.dumps({'app_ids':app_ids,'device_ids':device_ids,'wallpaper_id':wallpaper_id,'logo_id':logo_id,'banner_ids':banner_ids,'updated_at':stamp},ensure_ascii=False),encoding='utf-8')
       tmp.replace(V55_META)
     except Exception: pass
 
@@ -435,9 +452,16 @@ def launcher_v55(key:str=''):
     c=db()
     aa=rows(c,'SELECT * FROM apps ORDER BY name')
     dds=rows(c,'SELECT id,display_name,launcher_version,last_seen FROM devices ORDER BY last_seen DESC')
+    ww=rows(c,'SELECT * FROM wallpapers ORDER BY name')
+    ll=rows(c,'SELECT * FROM logos ORDER BY name')
+    bb=rows(c,'SELECT * FROM banners ORDER BY name')
     c.close()
-    cfg=_load_v55() or {'app_ids':[],'device_ids':[]}
+    cfg=_load_v55() or {'app_ids':[],'device_ids':[],'wallpaper_id':'','logo_id':'','banner_ids':[]}
     selected=set(cfg.get('app_ids') or [])
+    sel_banners=set(cfg.get('banner_ids') or [])
+    wall_opts='<option value="">Sem plano de fundo</option>'+''.join(f'<option value="{w["id"]}" {"selected" if cfg.get("wallpaper_id")==w["id"] else ""}>{w["name"]}</option>' for w in ww)
+    logo_opts='<option value="">Sem logomarca</option>'+''.join(f'<option value="{x["id"]}" {"selected" if cfg.get("logo_id")==x["id"] else ""}>{x["name"]}</option>' for x in ll)
+    banner_checks=''.join(f'<label><input style="width:auto" type="checkbox" name="banner_ids" value="{b["id"]}" {"checked" if b["id"] in sel_banners else ""}> {b["name"]}</label><br>' for b in bb)
     selected_devices=set(cfg.get('device_ids') or [])
     app_checks=''.join(
       f'<label><input class="v55app" style="width:auto" type="checkbox" name="app_ids" value="{a["id"]}" {"checked" if a["id"] in selected else ""}> {a["name"]} <span class="muted">{a.get("package_name") or ""}</span></label><br>'
@@ -455,6 +479,10 @@ def launcher_v55(key:str=''):
     <div class="card"><form method="post" action="/admin/launcher-v55/save?key={key}">
       <h3>Aplicativos da V5.5 <span id="v55count" class="pill">{count}/20</span></h3>
       <div style="max-height:420px;overflow:auto">{app_checks or '<span class="muted">Nenhum APK cadastrado.</span>'}</div>
+      <h3>Visual da Launcher V5.5</h3>
+      <label>Plano de fundo</label><select name="wallpaper_id">{wall_opts}</select>
+      <label>Logomarca</label><select name="logo_id">{logo_opts}</select>
+      <h4>Banners</h4><div style="max-height:220px;overflow:auto">{banner_checks or '<span class="muted">Nenhum banner cadastrado.</span>'}</div>
       <h3>Boxes que usarão a V5.5 Principal</h3>
       <div style="max-height:320px;overflow:auto">{device_checks or '<span class="muted">Nenhum dispositivo cadastrado.</span>'}</div>
       <button>SALVAR LAUNCHER PRINCIPAL</button>
@@ -472,13 +500,13 @@ def launcher_v55(key:str=''):
     return page('Launcher V5.5 Principal',body,key)
 
 @app.post('/admin/launcher-v55/save')
-def launcher_v55_save(key:str,app_ids:list[str]=Form(default=[]),device_ids:list[str]=Form(default=[])):
+def launcher_v55_save(key:str,app_ids:list[str]=Form(default=[]),device_ids:list[str]=Form(default=[]),wallpaper_id:str=Form(''),logo_id:str=Form(''),banner_ids:list[str]=Form(default=[])):
     adm(key)
     app_ids=list(dict.fromkeys(app_ids))
     device_ids=list(dict.fromkeys(device_ids))
     if len(app_ids)>20:
       raise HTTPException(400,'A Launcher V5.5 aceita no máximo 20 aplicativos')
-    _save_v55({'app_ids':app_ids,'device_ids':device_ids,'updated_at':now()})
+    _save_v55({'app_ids':app_ids,'device_ids':device_ids,'wallpaper_id':wallpaper_id,'logo_id':logo_id,'banner_ids':banner_ids,'updated_at':now()})
     return go('/admin/launcher-v55',key)
 
 @app.get('/admin/layouts',response_class=HTMLResponse)
