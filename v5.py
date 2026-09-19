@@ -50,7 +50,8 @@ def init():
       "CREATE TABLE IF NOT EXISTS banners(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,media_type TEXT NOT NULL DEFAULT 'image',created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS wallpapers(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,name TEXT NOT NULL,days INTEGER NOT NULL DEFAULT 30,price_cents INTEGER NOT NULL DEFAULT 0,layout_id TEXT,created_at TEXT)",
-      "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')"
+      "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')",
+      "CREATE TABLE IF NOT EXISTS launcher_updates(id TEXT PRIMARY KEY,version_name TEXT NOT NULL,version_code INTEGER NOT NULL,filename TEXT NOT NULL,size_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',mandatory INTEGER NOT NULL DEFAULT 0,published INTEGER NOT NULL DEFAULT 1,notes TEXT NOT NULL DEFAULT '',created_at TEXT)"
     ]:ex(c,s)
     c.commit()
     for s in [
@@ -161,7 +162,7 @@ def media(fn:str):
 
 CSS='''*{box-sizing:border-box}body{margin:0;background:#081526;color:#fff;font:15px Arial}.top{height:62px;background:#0d1d33;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}.wrap{padding:18px;max-width:1500px;margin:auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}.nav a,button{background:#287ff1;color:#fff;border:0;border-radius:8px;padding:10px 14px;text-decoration:none;cursor:pointer}.card{background:#0f2139;border:1px solid #24364d;border-radius:10px;padding:15px;margin:10px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.muted{color:#9badc3}.ok{color:#24cf67}.bad{color:#ff5864}input,select,textarea{width:100%;background:#071323;color:#fff;border:1px solid #334760;border-radius:7px;padding:10px;margin:5px 0 10px}h1{margin:5px 0 0}.hero{padding:16px;background:#0d1d33;border-radius:10px}.wide{width:100%;font-size:18px}.danger{background:#d83a4d}.good{background:#24a85a}img{max-width:100%}'''
 def nav(k):
-    x=[('Dispositivos','/'),('Ativações','/admin/activation-keys'),('Layouts','/admin/layouts'),('Aplicativos','/admin/apps'),('Banners','/admin/banners'),('Planos de fundo','/admin/wallpapers'),('Planos','/admin/plans'),('Revendas','/admin/resellers'),('Comandos','/admin/commands'),('Notificações','/admin/notifications'),('LOGs','/admin/logs')]
+    x=[('Dispositivos','/'),('Ativações','/admin/activation-keys'),('Layouts','/admin/layouts'),('Aplicativos','/admin/apps'),('Banners','/admin/banners'),('Planos de fundo','/admin/wallpapers'),('Planos','/admin/plans'),('Revendas','/admin/resellers'),('Comandos','/admin/commands'),('Notificações','/admin/notifications'),('Atualização Launcher','/admin/launcher-update'),('LOGs','/admin/logs')]
     return '<div class="nav">'+''.join(f'<a href="{u}?key={k}">{n}</a>' for n,u in x)+'</div>'
 def page(t,b,k=''):return HTMLResponse(f'<!doctype html><meta name="viewport" content="width=device-width"><title>{t}</title><style>{CSS}</style><div class="top">BBL.BOXTV</div><div class="wrap"><h1>{t}</h1>{nav(k) if k else ""}{b}</div>')
 def go(u,k):return RedirectResponse(f'{u}?key={k}',303)
@@ -223,6 +224,83 @@ def apps(key:str=''):
 @app.post('/admin/apps/upload')
 def appup(key:str,name:str=Form(''),apk:UploadFile=File(...)):
     adm(key);fn=save(apk,'apk',{'.apk'});p=UPLOAD_DIR/fn;m=apkmeta(p);m['name']=name.strip() or m['name'];h=hashlib.sha256(p.read_bytes()).hexdigest();c=db();ex(c,'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(secrets.token_hex(8),m['name'],m['package_name'],m['version_name'],m['version_code'],fn,p.stat().st_size,h,now()));c.commit();c.close();return go('/admin/apps',key)
+
+
+@app.get('/admin/launcher-update',response_class=HTMLResponse)
+def launcher_update_page(key:str=''):
+    adm(key)
+    c=db()
+    uu=rows(c,'SELECT * FROM launcher_updates ORDER BY version_code DESC, created_at DESC')
+    c.close()
+    cards=''
+    for u in uu:
+      status='PUBLICADA' if u.get('published') else 'DESATIVADA'
+      mandatory='OBRIGATÓRIA' if u.get('mandatory') else 'OPCIONAL'
+      cards+=f'''<div class="card"><h3>Versão {u["version_name"]} <span class="ok">{status}</span></h3><div class="muted">Código {u["version_code"]} • {mandatory} • {u.get("created_at") or "-"}</div><div>{u.get("notes") or ""}</div><div class="nav"><a href="/api/launcher/{u["id"]}/download">Baixar APK</a><form method="post" action="/admin/launcher-update/{u["id"]}/toggle?key={key}" style="display:inline"><button>{'Despublicar' if u.get('published') else 'Publicar'}</button></form></div></div>'''
+    form=f'''<div class="card"><h3>Publicar nova atualização</h3><form enctype="multipart/form-data" method="post" action="/admin/launcher-update/publish?key={key}"><input name="version_name" placeholder="Versão, ex: 2.5.6" required><input name="version_code" type="number" placeholder="Código da versão, ex: 256" required><textarea name="notes" placeholder="Notas da atualização"></textarea><label><input style="width:auto" type="checkbox" name="mandatory" value="1"> Atualização obrigatória</label><input type="file" name="apk" accept=".apk" required><button>PUBLICAR ATUALIZAÇÃO</button></form></div>'''
+    return page('Atualização da Launcher',form+(cards or '<div class="card">Nenhuma atualização publicada.</div>'),key)
+
+@app.post('/admin/launcher-update/publish')
+def launcher_update_publish(key:str,version_name:str=Form(...),version_code:int=Form(...),notes:str=Form(''),mandatory:Optional[str]=Form(None),apk:UploadFile=File(...)):
+    adm(key)
+    if version_code < 1: raise HTTPException(400,'version_code inválido')
+    fn=save(apk,'launcher_update',{'.apk'})
+    p=UPLOAD_DIR/fn
+    h=hashlib.sha256(p.read_bytes()).hexdigest()
+    c=db()
+    try:
+      ex(c,'UPDATE launcher_updates SET published=0 WHERE published=1')
+      ex(c,'INSERT INTO launcher_updates(id,version_name,version_code,filename,size_bytes,sha256,mandatory,published,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(secrets.token_hex(8),version_name.strip(),version_code,fn,p.stat().st_size,h,1 if mandatory else 0,1,notes.strip(),now()))
+      c.commit()
+    except Exception:
+      c.rollback(); c.close()
+      try:p.unlink()
+      except Exception:pass
+      raise
+    c.close()
+    return go('/admin/launcher-update',key)
+
+@app.post('/admin/launcher-update/{uid}/toggle')
+def launcher_update_toggle(uid:str,key:str):
+    adm(key)
+    c=db()
+    u=one(c,'SELECT * FROM launcher_updates WHERE id=?',(uid,))
+    if not u:
+      c.close(); raise HTTPException(404)
+    newv=0 if u.get('published') else 1
+    if newv:
+      ex(c,'UPDATE launcher_updates SET published=0')
+    ex(c,'UPDATE launcher_updates SET published=? WHERE id=?',(newv,uid))
+    c.commit(); c.close()
+    return go('/admin/launcher-update',key)
+
+@app.get('/api/launcher/{uid}/download')
+def launcher_update_download(uid:str):
+    c=db();u=one(c,'SELECT * FROM launcher_updates WHERE id=?',(uid,));c.close()
+    if not u: raise HTTPException(404)
+    p=UPLOAD_DIR/u['filename']
+    if not p.exists(): raise HTTPException(404,'APK não encontrado')
+    return FileResponse(p,media_type='application/vnd.android.package-archive',filename=f'BBL_BOXTV_{u["version_name"]}.apk')
+
+@app.get('/api/devices/{did}/launcher-update')
+def launcher_update_check(did:str,current_version_code:int=0,authorization:Optional[str]=Header(None)):
+    c=db()
+    authdev(c,did,authorization)
+    u=one(c,'SELECT * FROM launcher_updates WHERE published=1 ORDER BY version_code DESC, created_at DESC LIMIT 1')
+    c.close()
+    if not u:
+      return {'update_available':False}
+    available=int(u.get('version_code') or 0) > int(current_version_code or 0)
+    return {
+      'update_available':available,
+      'version_name':u['version_name'],
+      'version_code':int(u['version_code']),
+      'mandatory':bool(u.get('mandatory')),
+      'notes':u.get('notes') or '',
+      'size_bytes':int(u.get('size_bytes') or 0),
+      'sha256':u.get('sha256') or '',
+      'download_url':f'/api/launcher/{u["id"]}/download' if available else ''
+    }
 
 @app.get('/admin/layouts',response_class=HTMLResponse)
 def layouts(key:str=''):
