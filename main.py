@@ -17,6 +17,22 @@ import v5_base2_client_apps_manage
 import v5_launcher_v4_theme
 import v5_activation_code_panel
 
+# Temporary cleanup approved by admin: remove only obsolete APK binary payloads
+# from Postgres to recover disk space. This does not delete clients, activation
+# codes, resellers, layouts, or settings.
+try:
+    _cleanup_db = v5.db()
+    for _table in ("base2_app_chunks", "base2_app_blobs", "base2_app_files"):
+        try:
+            v5.ex(_cleanup_db, f"DELETE FROM {_table}")
+            _cleanup_db.commit()
+        except Exception:
+            _cleanup_db.rollback()
+    _cleanup_db.close()
+except Exception:
+    pass
+
+
 
 def _seed_reseller_admin():
     username = (os.getenv('RESELLER_ADMIN_USER') or '').strip()
