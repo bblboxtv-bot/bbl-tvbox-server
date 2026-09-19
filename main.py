@@ -1,22 +1,5 @@
 import os
 import secrets
-
-# One-time cleanup approved by admin. Run before the rest of the panel imports
-# so a full database can release obsolete APK binary storage first.
-import v5
-try:
-    _c = v5.db()
-    if v5.pg():
-        v5.ex(_c, 'TRUNCATE TABLE base2_app_chunks, base2_app_blobs, base2_app_files')
-        _c.commit()
-    _c.close()
-except Exception:
-    try:
-        _c.rollback()
-        _c.close()
-    except Exception:
-        pass
-
 from v5_base_compat import app
 import v5_reseller_portal as portal
 import v5_base2_gate
