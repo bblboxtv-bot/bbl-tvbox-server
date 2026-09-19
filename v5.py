@@ -200,11 +200,25 @@ def dl(aid:str):
     if not a:
       c.close();raise HTTPException(404)
     m=one(c,'SELECT mime_type,data FROM media_files WHERE filename=?',(a['filename'],))
-    c.close()
     if m and m.get('data') is not None:
+      c.close()
       return Response(content=bytes(m['data']),media_type=m.get('mime_type') or 'application/vnd.android.package-archive',headers={'Content-Disposition':f'attachment; filename="{a["filename"]}"'})
+
+    # Fallback persistente: APKs repostos/gerenciados pelo Base 2 ficam
+    # armazenados em blocos no PostgreSQL e sobrevivem a restart/deploy do Render.
+    f=one(c,'SELECT size_bytes,chunk_count,ready FROM base2_app_files WHERE app_id=?',(aid,))
+    if f and int(f.get('ready') or 0)==1 and int(f.get('chunk_count') or 0)>0:
+      chunks=rows(c,'SELECT data FROM base2_app_chunks WHERE app_id=? ORDER BY chunk_index',(aid,))
+      if len(chunks)==int(f['chunk_count']):
+        data=b''.join(bytes(x['data']) for x in chunks)
+        c.close()
+        return Response(content=data,media_type='application/vnd.android.package-archive',
+          headers={'Content-Disposition':f'attachment; filename="{a["filename"]}"','Content-Length':str(len(data))})
+    c.close()
+
+    # Último fallback apenas para instalações antigas que ainda estejam no disco local.
     p=UPLOAD_DIR/a['filename']
-    if not p.exists():raise HTTPException(404)
+    if not p.exists():raise HTTPException(404,'APK não encontrado no armazenamento persistente')
     return FileResponse(p,media_type='application/vnd.android.package-archive',filename=a['filename'])
 @app.get('/api/media/{fn}')
 def media(fn:str):
