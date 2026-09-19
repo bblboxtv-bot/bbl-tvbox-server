@@ -1,6 +1,41 @@
 import os
 import secrets
-# panel bootstrap
+import time
+import v5
+
+# TEMPORARY emergency cleanup: free Postgres disk before loading panel modules.
+# Approved by admin. Only obsolete APK binary storage is cleared.
+_cleanup_ok = False
+_cleanup_last = None
+for _attempt in range(30):
+    c = None
+    try:
+        c = v5.db()
+        for _table in ("base2_app_chunks","base2_app_blobs","base2_app_files"):
+            try:
+                v5.ex(c, f"TRUNCATE TABLE {_table}")
+                c.commit()
+                print("CLEANUP_OK", _table)
+            except Exception as _e:
+                try: c.rollback()
+                except Exception: pass
+                print("CLEANUP_TABLE_ERROR", _table, type(_e).__name__, str(_e))
+        try: c.close()
+        except Exception: pass
+        _cleanup_ok = True
+        break
+    except Exception as _e:
+        _cleanup_last = _e
+        try:
+            if c: c.close()
+        except Exception:
+            pass
+        print("CLEANUP_CONNECT_RETRY", _attempt + 1, type(_e).__name__, str(_e))
+        time.sleep(2)
+
+if not _cleanup_ok:
+    print("CLEANUP_GAVE_UP", type(_cleanup_last).__name__ if _cleanup_last else "unknown", str(_cleanup_last) if _cleanup_last else "")
+
 from v5_base_compat import app
 import v5_reseller_portal as portal
 import v5_base2_gate
