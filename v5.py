@@ -132,6 +132,7 @@ def payload(c,d):
       return 1
     if use_v55:
       aa.sort(key=_v55_priority)
+    print(f"POLICY_APPS device={d.get('id')} ids={len(ids)} apps={len(aa)} use_v55={use_v55}", flush=True)
     expired=False
     if d.get('expires_at'):
       try:expired=datetime.fromisoformat(d['expires_at'].replace('Z','+00:00'))<datetime.now(timezone.utc)
