@@ -100,7 +100,16 @@ def health():return {'ok':True,'service':'bbl-boxtv-manager','version':'5.0.0'}
 def enroll(b:Enroll):
     key=b.activationCode or b.activation or b.activation_code or b.enrollmentKey
     if not key:raise HTTPException(400,'activation key required')
-    c=db();k=one(c,'SELECT * FROM activation_keys WHERE key=? AND enabled=1',(key,))
+    # TV keyboards can insert spaces or change case. Compare activation codes
+    # normalized so a valid panel code is not rejected because of formatting.
+    norm=''.join(ch for ch in str(key).upper() if ch.isalnum())
+    c=db()
+    k=None
+    for candidate in rows(c,'SELECT * FROM activation_keys WHERE enabled=1'):
+      cand_norm=''.join(ch for ch in str(candidate.get('key') or '').upper() if ch.isalnum())
+      if cand_norm==norm:
+        k=candidate
+        break
     if not k:c.close();raise HTTPException(403,'invalid activation key')
     did=b.deviceId or b.device_id or secrets.token_hex(5).upper();d=one(c,'SELECT * FROM devices WHERE id=?',(did,))
     if d:
@@ -115,7 +124,7 @@ def payload(c,d):
     v55=_load_v55()
     lv=(d.get('launcher_version') or '').strip()
     v55_devices=set(v55.get('device_ids') or []) if v55 else set()
-    use_v55=bool(v55) and (d.get('id') in v55_devices or lv.startswith('2.5.5') or lv.startswith('5.5'))
+    use_v55=bool(v55) and (d.get('id') in v55_devices or lv.startswith('2.5.5') or lv.startswith('2.5.6') or lv.startswith('5.5'))
     # Sempre carrega o layout para branding (fundo/logo/banner), mesmo quando
     # os aplicativos vêm do perfil V5.5.
     if d.get('layout_id'):
