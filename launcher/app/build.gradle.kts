@@ -11,11 +11,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.bbl.boxtv.launcher"
+        applicationId = "com.bbl.boxtv.launcher.test"
         minSdk = 21
         targetSdk = 35
-        versionCode = 9
-        versionName = "2.1.1"
+        versionCode = 255
+        versionName = "2.5.5"
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.trimEnd('/')}\"")
     }
 
