@@ -311,7 +311,7 @@ def appup(key:str,name:str=Form(''),apk:UploadFile=File(...)):
       p.unlink(missing_ok=True);raise HTTPException(413,'APK maior que 120 MB')
     m=apkmeta(p);m['name']=name.strip() or m['name'];data=p.read_bytes();h=hashlib.sha256(data).hexdigest()
     c=db()
-    used=one(c,"SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%'") or {'total':0}
+    used=one(c,"SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%%'") or {'total':0}
     if int(used.get('total') or 0)+size>450*1024*1024:
       c.close();p.unlink(missing_ok=True);raise HTTPException(507,'Limite seguro de 450 MB para APKs persistentes atingido')
     aid=secrets.token_hex(8)
@@ -334,7 +334,7 @@ def appreplace(aid:str,key:str,apk:UploadFile=File(...)):
       p.unlink(missing_ok=True);raise HTTPException(413,'APK maior que 120 MB')
     m=apkmeta(p);data=p.read_bytes();h=hashlib.sha256(data).hexdigest()
     c=db()
-    used=one(c,"SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%'") or {'total':0}
+    used=one(c,"SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%%'") or {'total':0}
     oldpersist=one(c,'SELECT size_bytes FROM media_files WHERE filename=?',(old.get('filename'),))
     current=int(used.get('total') or 0)-int((oldpersist or {}).get('size_bytes') or 0)
     if current+size>450*1024*1024:
