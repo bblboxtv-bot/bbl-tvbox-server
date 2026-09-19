@@ -1,17 +1,27 @@
-from fastapi import File, UploadFile
+import secrets
+import hashlib
+from fastapi import File, UploadFile, Form
 from fastapi.responses import RedirectResponse
 import v5
 import v5_base2_apk_storage as storage
-import v5_base2_apps as base2apps
 
 
 def persistent_download(aid: str):
     return storage.base2_download_apk(aid)
 
 
-def persistent_upload(key: str, apk: UploadFile = File(...)):
+def persistent_upload(key: str, name: str = Form(''), apk: UploadFile = File(...)):
     v5.adm(key)
-    base2apps.save_app(apk, '')
+    fn = v5.save(apk, 'apk', {'.apk'})
+    p = v5.UPLOAD_DIR / fn
+    m = v5.apkmeta(p)
+    m['name'] = name.strip() or m['name']
+    h = hashlib.sha256(p.read_bytes()).hexdigest()
+    c = v5.db()
+    v5.ex(c, 'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+          (secrets.token_hex(8),m['name'],m['package_name'],m['version_name'],m['version_code'],fn,p.stat().st_size,h,v5.now()))
+    c.commit()
+    c.close()
     return RedirectResponse('/admin/apps?key=' + key, 303)
 
 
