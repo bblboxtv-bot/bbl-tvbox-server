@@ -17,21 +17,7 @@ def pg():return DATABASE_URL.startswith(('postgres://','postgresql://'))
 def db():
     if pg():
         import psycopg
-        from psycopg.conninfo import conninfo_to_dict
-        url=DATABASE_URL.replace('postgres://','postgresql://',1)
-        try:
-            return psycopg.connect(url,autocommit=False)
-        except Exception as first_error:
-            try:
-                params=conninfo_to_dict(url)
-                host=(params.get('host') or '').strip()
-                if host.startswith('dpg-') and '.' not in host:
-                    params['host']=host+'.virginia-postgres.render.com'
-                    params['sslmode']='require'
-                    return psycopg.connect(autocommit=False,**params)
-            except Exception as fallback_error:
-                print('Postgres external fallback failed:', type(fallback_error).__name__, str(fallback_error))
-            raise first_error
+        return psycopg.connect(DATABASE_URL.replace('postgres://','postgresql://',1),autocommit=False)
     import sqlite3
     p=DATABASE_URL.replace('sqlite:///','',1) if DATABASE_URL.startswith('sqlite:///') else DATABASE_URL
     c=sqlite3.connect(p);c.row_factory=sqlite3.Row;return c
