@@ -178,9 +178,16 @@ def cmdresult(did:str,cid:str,b:CmdResult,authorization:Optional[str]=Header(Non
     c=db();authdev(c,did,authorization);ex(c,'UPDATE commands SET status=?,result=?,finished_at=? WHERE id=? AND device_id=?',(b.status,b.result,now(),cid,did));log(c,did,'command_result',f'{cid}:{b.status}:{b.result[:180]}');c.commit();c.close();return {'ok':True}
 @app.get('/api/apps/{aid}/download')
 def dl(aid:str):
-    c=db();a=one(c,'SELECT filename FROM apps WHERE id=?',(aid,));c.close()
-    if not a or not (UPLOAD_DIR/a['filename']).exists():raise HTTPException(404)
-    return FileResponse(UPLOAD_DIR/a['filename'],media_type='application/vnd.android.package-archive',filename=a['filename'])
+    c=db();a=one(c,'SELECT filename FROM apps WHERE id=?',(aid,))
+    if not a:
+      c.close();raise HTTPException(404)
+    m=one(c,'SELECT mime_type,data FROM media_files WHERE filename=?',(a['filename'],))
+    c.close()
+    if m and m.get('data') is not None:
+      return Response(content=bytes(m['data']),media_type=m.get('mime_type') or 'application/vnd.android.package-archive',headers={'Content-Disposition':f'attachment; filename="{a["filename"]}"'})
+    p=UPLOAD_DIR/a['filename']
+    if not p.exists():raise HTTPException(404)
+    return FileResponse(p,media_type='application/vnd.android.package-archive',filename=a['filename'])
 @app.get('/api/media/{fn}')
 def media(fn:str):
     name=Path(fn).name
@@ -268,7 +275,21 @@ def apps(key:str=''):
     adm(key);c=db();aa=rows(c,'SELECT * FROM apps ORDER BY created_at DESC');c.close();cards=''.join(f'<div class="card"><b>{a["name"]}</b><br><span class="muted">{a.get("package_name") or "-"} • {a.get("version_name") or "-"}</span></div>' for a in aa);return page('Meus Aplicativos',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/apps/upload?key={key}"><input name="name" placeholder="Nome opcional"><input type="file" name="apk" accept=".apk" required><button>ADD APK AUTOMÁTICO</button></form></div><div class="grid">{cards}</div>',key)
 @app.post('/admin/apps/upload')
 def appup(key:str,name:str=Form(''),apk:UploadFile=File(...)):
-    adm(key);fn=save(apk,'apk',{'.apk'});p=UPLOAD_DIR/fn;m=apkmeta(p);m['name']=name.strip() or m['name'];h=hashlib.sha256(p.read_bytes()).hexdigest();c=db();ex(c,'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(secrets.token_hex(8),m['name'],m['package_name'],m['version_name'],m['version_code'],fn,p.stat().st_size,h,now()));c.commit();c.close();return go('/admin/apps',key)
+    adm(key)
+    fn=save(apk,'apk',{'.apk'});p=UPLOAD_DIR/fn
+    size=p.stat().st_size
+    if size>120*1024*1024:
+      p.unlink(missing_ok=True);raise HTTPException(413,'APK maior que 120 MB')
+    m=apkmeta(p);m['name']=name.strip() or m['name'];data=p.read_bytes();h=hashlib.sha256(data).hexdigest()
+    c=db()
+    used=one(c,"SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%'") or {'total':0}
+    if int(used.get('total') or 0)+size>450*1024*1024:
+      c.close();p.unlink(missing_ok=True);raise HTTPException(507,'Limite seguro de 450 MB para APKs persistentes atingido')
+    aid=secrets.token_hex(8)
+    ex(c,'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',(aid,m['name'],m['package_name'],m['version_name'],m['version_code'],fn,size,h,now()))
+    ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,'application/vnd.android.package-archive',size,data,now()))
+    c.commit();c.close()
+    return go('/admin/apps',key)
 
 
 LAUNCHER_UPDATE_META=UPLOAD_DIR/'launcher_update.json'
