@@ -163,7 +163,7 @@ def media(fn:str):
 
 CSS='''*{box-sizing:border-box}body{margin:0;background:#081526;color:#fff;font:15px Arial}.top{height:62px;background:#0d1d33;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}.wrap{padding:18px;max-width:1500px;margin:auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}.nav a,button{background:#287ff1;color:#fff;border:0;border-radius:8px;padding:10px 14px;text-decoration:none;cursor:pointer}.card{background:#0f2139;border:1px solid #24364d;border-radius:10px;padding:15px;margin:10px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.muted{color:#9badc3}.ok{color:#24cf67}.bad{color:#ff5864}input,select,textarea{width:100%;background:#071323;color:#fff;border:1px solid #334760;border-radius:7px;padding:10px;margin:5px 0 10px}h1{margin:5px 0 0}.hero{padding:16px;background:#0d1d33;border-radius:10px}.wide{width:100%;font-size:18px}.danger{background:#d83a4d}.good{background:#24a85a}img{max-width:100%}'''
 def nav(k):
-    x=[('Dispositivos','/'),('Ativações','/admin/activation-keys'),('Layouts','/admin/layouts'),('Aplicativos','/admin/apps'),('Banners','/admin/banners'),('Planos de fundo','/admin/wallpapers'),('Planos','/admin/plans'),('Revendas','/admin/resellers'),('Comandos','/admin/commands'),('Notificações','/admin/notifications'),('Atualização Launcher','/admin/launcher-update'),('LOGs','/admin/logs')]
+    x=[('Dispositivos','/'),('Ativações','/admin/activation-keys'),('Layouts','/admin/layouts'),('Aplicativos','/admin/apps'),('Banners','/admin/banners'),('Planos de fundo','/admin/wallpapers'),('Planos','/admin/plans'),('Revendas','/admin/resellers'),('Comandos','/admin/commands'),('Notificações','/admin/notifications'),('Launcher V5.5','/admin/launcher-v55'),('Atualização Launcher','/admin/launcher-update'),('LOGs','/admin/logs')]
     return '<div class="nav">'+''.join(f'<a href="{u}?key={k}">{n}</a>' for n,u in x)+'</div>'
 def page(t,b,k=''):return HTMLResponse(f'<!doctype html><meta name="viewport" content="width=device-width"><title>{t}</title><style>{CSS}</style><div class="top">BBL.BOXTV</div><div class="wrap"><h1>{t}</h1>{nav(k) if k else ""}{b}</div>')
 def go(u,k):return RedirectResponse(f'{u}?key={k}',303)
@@ -317,6 +317,71 @@ def launcher_update_check(did:str,current_version_code:int=0,authorization:Optio
       'sha256':u.get('sha256') or '',
       'download_url':'/api/launcher/download' if available else ''
     }
+
+
+V55_LAYOUT_ID='bbl-v55-principal'
+
+@app.get('/admin/launcher-v55',response_class=HTMLResponse)
+def launcher_v55(key:str=''):
+    adm(key)
+    c=db()
+    aa=rows(c,'SELECT * FROM apps ORDER BY name')
+    dds=rows(c,'SELECT id,display_name,launcher_version,layout_id,last_seen FROM devices ORDER BY last_seen DESC')
+    lay=one(c,'SELECT * FROM layouts WHERE id=?',(V55_LAYOUT_ID,))
+    c.close()
+    selected=set(json.loads((lay or {}).get('app_ids') or '[]'))
+    app_checks=''.join(
+      f'<label><input class="v55app" style="width:auto" type="checkbox" name="app_ids" value="{a["id"]}" {"checked" if a["id"] in selected else ""}> {a["name"]} <span class="muted">{a.get("package_name") or ""}</span></label><br>'
+      for a in aa
+    )
+    device_checks=''.join(
+      f'<label><input style="width:auto" type="checkbox" name="device_ids" value="{d["id"]}" {"checked" if d.get("layout_id")==V55_LAYOUT_ID else ""}> {d.get("display_name") or d["id"]} <span class="muted">• {d.get("launcher_version") or "sem versão"}</span></label><br>'
+      for d in dds
+    )
+    count=len(selected)
+    body=f"""<div class="grid">
+      <div class="card"><h3>BBL.BOXTV Launcher V5.5</h3><div class="ok"><b>LAUNCHER PRINCIPAL</b></div><p class="muted">Perfil principal para a versão 2.5.5 estável.</p><p><b>Capacidade:</b> até 20 aplicativos remotos</p><p><b>Selecionados agora:</b> {count}/20</p></div>
+      <div class="card"><h3>Como funciona</h3><p>Os aplicativos escolhidos aqui são enviados pela política da Box. A launcher recebe a lista completa e pode instalar/abrir os aplicativos remotamente.</p></div>
+    </div>
+    <div class="card"><form method="post" action="/admin/launcher-v55/save?key={key}">
+      <h3>Aplicativos da V5.5 <span id="v55count" class="pill">{count}/20</span></h3>
+      <div style="max-height:420px;overflow:auto">{app_checks or '<span class="muted">Nenhum APK cadastrado.</span>'}</div>
+      <h3>Boxes que usarão a V5.5 Principal</h3>
+      <div style="max-height:320px;overflow:auto">{device_checks or '<span class="muted">Nenhum dispositivo cadastrado.</span>'}</div>
+      <button>SALVAR LAUNCHER PRINCIPAL</button>
+    </form></div>
+    <script>
+    (function(){{
+      const xs=[...document.querySelectorAll('.v55app')], out=document.getElementById('v55count');
+      function sync(){{
+        const n=xs.filter(x=>x.checked).length; out.textContent=n+'/20';
+        xs.forEach(x=>{{ if(!x.checked) x.disabled=n>=20; }});
+      }}
+      xs.forEach(x=>x.addEventListener('change',sync)); sync();
+    }})();
+    </script>"""
+    return page('Launcher V5.5 Principal',body,key)
+
+@app.post('/admin/launcher-v55/save')
+def launcher_v55_save(key:str,app_ids:list[str]=Form(default=[]),device_ids:list[str]=Form(default=[])):
+    adm(key)
+    app_ids=list(dict.fromkeys(app_ids))
+    device_ids=list(dict.fromkeys(device_ids))
+    if len(app_ids)>20:
+      raise HTTPException(400,'A Launcher V5.5 aceita no máximo 20 aplicativos')
+    c=db()
+    lay=one(c,'SELECT id FROM layouts WHERE id=?',(V55_LAYOUT_ID,))
+    if lay:
+      ex(c,'UPDATE layouts SET name=?,app_ids=? WHERE id=?',('BBL.BOXTV V5.5 PRINCIPAL',json.dumps(app_ids),V55_LAYOUT_ID))
+    else:
+      ex(c,'INSERT INTO layouts(id,name,app_ids,created_at) VALUES(?,?,?,?)',(V55_LAYOUT_ID,'BBL.BOXTV V5.5 PRINCIPAL',json.dumps(app_ids),now()))
+    ex(c,'UPDATE devices SET layout_id=NULL WHERE layout_id=?',(V55_LAYOUT_ID,))
+    for did in device_ids:
+      ex(c,'UPDATE devices SET layout_id=? WHERE id=?',(V55_LAYOUT_ID,did))
+      log(c,did,'launcher_v55','perfil principal aplicado')
+    c.commit()
+    c.close()
+    return go('/admin/launcher-v55',key)
 
 @app.get('/admin/layouts',response_class=HTMLResponse)
 def layouts(key:str=''):
