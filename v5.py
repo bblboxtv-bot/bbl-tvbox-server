@@ -16,20 +16,21 @@ def now():return datetime.now(timezone.utc).isoformat()
 def pg():return DATABASE_URL.startswith(('postgres://','postgresql://'))
 def db():
     if pg():
-        import psycopg,re
+        import psycopg
+        from psycopg.conninfo import conninfo_to_dict
         url=DATABASE_URL.replace('postgres://','postgresql://',1)
         try:
             return psycopg.connect(url,autocommit=False)
         except Exception as first_error:
             try:
-                fallback=re.sub(r'@(?P<h>dpg-[^:/?]+)(?=[:/])',
-                                lambda m:'@'+m.group('h')+'.virginia-postgres.render.com',
-                                url, count=1)
-                if fallback!=url:
-                    fallback += ('&' if '?' in fallback else '?')+'sslmode=require'
-                    return psycopg.connect(fallback,autocommit=False)
-            except Exception:
-                pass
+                params=conninfo_to_dict(url)
+                host=(params.get('host') or '').strip()
+                if host.startswith('dpg-') and '.' not in host:
+                    params['host']=host+'.virginia-postgres.render.com'
+                    params['sslmode']='require'
+                    return psycopg.connect(autocommit=False,**params)
+            except Exception as fallback_error:
+                print('Postgres external fallback failed:', type(fallback_error).__name__, str(fallback_error))
             raise first_error
     import sqlite3
     p=DATABASE_URL.replace('sqlite:///','',1) if DATABASE_URL.startswith('sqlite:///') else DATABASE_URL
