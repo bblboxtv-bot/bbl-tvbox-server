@@ -1,0 +1,42 @@
+name: Build Launcher V2.5.6
+
+on:
+  push:
+    branches: [ launcher-v256-build ]
+    paths:
+      - 'launcher_build/**'
+      - '.github/workflows/build-launcher-v256.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct Android project
+        shell: bash
+        run: |
+          mkdir -p launcher_build/work
+          cat launcher_build/chunks/chunk_*.txt > launcher_build/source.b64
+          base64 -d launcher_build/source.b64 > launcher_build/source.zip
+          unzip -q launcher_build/source.zip -d launcher_build/work
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: launcher_build/work
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BBL_BOXTV_2.5.6_ATUALIZAR_UNSIGNED
+          path: launcher_build/work/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
