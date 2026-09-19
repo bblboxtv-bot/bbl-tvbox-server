@@ -294,8 +294,9 @@ def apps(key:str=''):
     cards=[]
     for a in aa:
       persisted=one(c,'SELECT filename FROM media_files WHERE filename=?',(a.get('filename'),))
+      chunked=one(c,'SELECT app_id FROM base2_app_files WHERE app_id=? AND ready=1',(a.get('id'),))
       local=(UPLOAD_DIR/(a.get('filename') or '')).exists()
-      ok=bool(persisted or local)
+      ok=bool(persisted or chunked or local)
       status='<span class="good">ARQUIVO OK</span>' if ok else '<span class="danger">ARQUIVO AUSENTE</span>'
       replace='' if ok else f'''<form enctype="multipart/form-data" method="post" action="/admin/apps/{a["id"]}/replace?key={key}" style="margin-top:10px">
       <input type="file" name="apk" accept=".apk" required><button>REPOR APK</button></form>'''
@@ -324,27 +325,8 @@ def appup(key:str,name:str=Form(''),apk:UploadFile=File(...)):
 @app.post('/admin/apps/{aid}/replace')
 def appreplace(aid:str,key:str,apk:UploadFile=File(...)):
     adm(key)
-    c=db();old=one(c,'SELECT * FROM apps WHERE id=?',(aid,))
-    if not old:
-      c.close();raise HTTPException(404,'aplicativo não encontrado')
-    c.close()
-    fn=save(apk,'apk',{'.apk'});p=UPLOAD_DIR/fn
-    size=p.stat().st_size
-    if size>120*1024*1024:
-      p.unlink(missing_ok=True);raise HTTPException(413,'APK maior que 120 MB')
-    m=apkmeta(p);data=p.read_bytes();h=hashlib.sha256(data).hexdigest()
-    c=db()
-    used=one(c,"SELECT COALESCE(SUM(size_bytes),0) total FROM media_files WHERE filename LIKE 'apk_%%'") or {'total':0}
-    oldpersist=one(c,'SELECT size_bytes FROM media_files WHERE filename=?',(old.get('filename'),))
-    current=int(used.get('total') or 0)-int((oldpersist or {}).get('size_bytes') or 0)
-    if current+size>450*1024*1024:
-      c.close();p.unlink(missing_ok=True);raise HTTPException(507,'Limite seguro de 450 MB para APKs persistentes atingido')
-    if old.get('filename'):
-      ex(c,'DELETE FROM media_files WHERE filename=?',(old.get('filename'),))
-    ex(c,'UPDATE apps SET package_name=?,version_name=?,version_code=?,filename=?,size_bytes=?,sha256=? WHERE id=?',
-       (m.get('package_name') or old.get('package_name') or '',m.get('version_name') or '',m.get('version_code') or '',fn,size,h,aid))
-    ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,'application/vnd.android.package-archive',size,data,now()))
-    c.commit();c.close()
+    import v5_base2_apps as base2apps
+    base2apps.replace_app_file(aid, apk)
     return go('/admin/apps',key)
 
 LAUNCHER_UPDATE_META=UPLOAD_DIR/'launcher_update.json'
