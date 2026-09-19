@@ -3,7 +3,7 @@ from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI,HTTPException,Header,Form,UploadFile,File,Request
-from fastapi.responses import HTMLResponse,RedirectResponse,FileResponse
+from fastapi.responses import HTMLResponse,RedirectResponse,FileResponse,Response
 from pydantic import BaseModel
 
 DATABASE_URL=os.getenv('DATABASE_URL','sqlite:///./tvbox.db')
@@ -52,11 +52,13 @@ def init():
       "CREATE TABLE IF NOT EXISTS wallpapers(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,name TEXT NOT NULL,days INTEGER NOT NULL DEFAULT 30,price_cents INTEGER NOT NULL DEFAULT 0,layout_id TEXT,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')",
-      "CREATE TABLE IF NOT EXISTS launcher_v55_profile(id TEXT PRIMARY KEY,app_ids TEXT NOT NULL DEFAULT '[]',device_ids TEXT NOT NULL DEFAULT '[]',updated_at TEXT)"
+      "CREATE TABLE IF NOT EXISTS launcher_v55_profile(id TEXT PRIMARY KEY,app_ids TEXT NOT NULL DEFAULT '[]',device_ids TEXT NOT NULL DEFAULT '[]',updated_at TEXT)",
+      "CREATE TABLE IF NOT EXISTS media_files(filename TEXT PRIMARY KEY,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,data BYTEA NOT NULL,created_at TEXT)",
+      "CREATE TABLE IF NOT EXISTS logos(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)"
     ]:ex(c,s)
     c.commit()
     for s in [
-      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''"
+      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE layouts ADD COLUMN logo_id TEXT"
     ]:col(c,s)
     try:ex(c,'INSERT INTO activation_keys(key,enabled,label,created_at) VALUES(?,?,?,?)',(ACTIVATION_KEY,1,'Chave padrão',now()));c.commit()
     except Exception:c.rollback()
@@ -146,7 +148,9 @@ def payload(c,d):
     if lay:
       if lay.get('wallpaper_id') and not brand['wallpaper_url']:
         w=one(c,'SELECT filename FROM wallpapers WHERE id=?',(lay['wallpaper_id'],));brand['wallpaper_url']=f"/api/media/{w['filename']}" if w else ''
-      if lay.get('logo_url') and not brand['logo_url']:brand['logo_url']=lay['logo_url']
+      if lay.get('logo_id') and not brand['logo_url']:
+        lg=one(c,'SELECT filename FROM logos WHERE id=?',(lay['logo_id'],));brand['logo_url']=f"/api/media/{lg['filename']}" if lg else ''
+      elif lay.get('logo_url') and not brand['logo_url']:brand['logo_url']=lay['logo_url']
       for bid in json.loads(lay.get('banner_ids') or '[]'):
         b=one(c,'SELECT * FROM banners WHERE id=?',(bid,))
         if b:banners.append({'id':b['id'],'name':b['name'],'type':b['media_type'],'url':f"/api/media/{b['filename']}"})
@@ -175,13 +179,31 @@ def dl(aid:str):
     return FileResponse(UPLOAD_DIR/a['filename'],media_type='application/vnd.android.package-archive',filename=a['filename'])
 @app.get('/api/media/{fn}')
 def media(fn:str):
-    p=UPLOAD_DIR/Path(fn).name
+    name=Path(fn).name
+    try:
+      c=db();m=one(c,'SELECT mime_type,data FROM media_files WHERE filename=?',(name,));c.close()
+      if m and m.get('data') is not None:
+        return Response(content=bytes(m['data']),media_type=m.get('mime_type') or 'application/octet-stream')
+    except Exception:
+      try:c.close()
+      except Exception:pass
+    p=UPLOAD_DIR/name
     if not p.exists():raise HTTPException(404)
     return FileResponse(p)
 
+def _save_persistent_media(u,prefix,allowed,max_bytes):
+    ext=Path(u.filename or '').suffix.lower()
+    if ext not in allowed:raise HTTPException(400,'arquivo inválido')
+    data=u.file.read(max_bytes+1)
+    if len(data)>max_bytes:raise HTTPException(413,f'arquivo maior que {max_bytes//(1024*1024)} MB')
+    fn=f'{prefix}_{secrets.token_hex(8)}{ext}'
+    mime=(u.content_type or '').strip() or ('video/mp4' if ext=='.mp4' else 'image/jpeg' if ext in ('.jpg','.jpeg') else 'image/png')
+    c=db();ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,mime,len(data),data,now()));c.commit();c.close()
+    return fn
+
 CSS='''*{box-sizing:border-box}body{margin:0;background:#081526;color:#fff;font:15px Arial}.top{height:62px;background:#0d1d33;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}.wrap{padding:18px;max-width:1500px;margin:auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}.nav a,button{background:#287ff1;color:#fff;border:0;border-radius:8px;padding:10px 14px;text-decoration:none;cursor:pointer}.card{background:#0f2139;border:1px solid #24364d;border-radius:10px;padding:15px;margin:10px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.muted{color:#9badc3}.ok{color:#24cf67}.bad{color:#ff5864}input,select,textarea{width:100%;background:#071323;color:#fff;border:1px solid #334760;border-radius:7px;padding:10px;margin:5px 0 10px}h1{margin:5px 0 0}.hero{padding:16px;background:#0d1d33;border-radius:10px}.wide{width:100%;font-size:18px}.danger{background:#d83a4d}.good{background:#24a85a}img{max-width:100%}'''
 def nav(k):
-    x=[('Dispositivos','/'),('Ativações','/admin/activation-keys'),('Layouts','/admin/layouts'),('Aplicativos','/admin/apps'),('Banners','/admin/banners'),('Planos de fundo','/admin/wallpapers'),('Planos','/admin/plans'),('Revendas','/admin/resellers'),('Comandos','/admin/commands'),('Notificações','/admin/notifications'),('Launcher V5.5','/admin/launcher-v55'),('Atualização Launcher','/admin/launcher-update'),('LOGs','/admin/logs')]
+    x=[('Dispositivos','/'),('Ativações','/admin/activation-keys'),('Layouts','/admin/layouts'),('Aplicativos','/admin/apps'),('Banners','/admin/banners'),('Planos de fundo','/admin/wallpapers'),('Logomarca','/admin/logos'),('Planos','/admin/plans'),('Revendas','/admin/resellers'),('Comandos','/admin/commands'),('Notificações','/admin/notifications'),('Launcher V5.5','/admin/launcher-v55'),('Atualização Launcher','/admin/launcher-update'),('LOGs','/admin/logs')]
     return '<div class="nav">'+''.join(f'<a href="{u}?key={k}">{n}</a>' for n,u in x)+'</div>'
 def page(t,b,k=''):return HTMLResponse(f'<!doctype html><meta name="viewport" content="width=device-width"><title>{t}</title><style>{CSS}</style><div class="top">BBL.BOXTV</div><div class="wrap"><h1>{t}</h1>{nav(k) if k else ""}{b}</div>')
 def go(u,k):return RedirectResponse(f'{u}?key={k}',303)
@@ -446,13 +468,25 @@ def banners(key:str=''):
     adm(key);c=db();bb=rows(c,'SELECT * FROM banners ORDER BY created_at DESC');c.close();cards=''.join(f'<div class="card"><b>{b["name"]}</b><br><span class="muted">{b["media_type"]}</span><br>{"<video controls style=max-width:100% src=/api/media/"+b["filename"]+"></video>" if b["media_type"]=="video" else "<img src=/api/media/"+b["filename"]+">"}</div>' for b in bb);return page('Meus Banners',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/banners/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="media" accept="image/*,video/mp4" required><button>ADD BANNER</button></form></div><div class="grid">{cards}</div>',key)
 @app.post('/admin/banners/create')
 def bannercreate(key:str,name:str=Form(...),media:UploadFile=File(...)):
-    adm(key);ext=Path(media.filename or '').suffix.lower();fn=save(media,'banner',{'.png','.jpg','.jpeg','.webp','.mp4'});c=db();ex(c,'INSERT INTO banners(id,name,filename,media_type,created_at) VALUES(?,?,?,?,?)',(secrets.token_hex(8),name.strip(),fn,'video' if ext=='.mp4' else 'image',now()));c.commit();c.close();return go('/admin/banners',key)
+    adm(key);ext=Path(media.filename or '').suffix.lower();fn=_save_persistent_media(media,'banner',{'.png','.jpg','.jpeg','.webp','.mp4'},25*1024*1024);c=db();ex(c,'INSERT INTO banners(id,name,filename,media_type,created_at) VALUES(?,?,?,?,?)',(secrets.token_hex(8),name.strip(),fn,'video' if ext=='.mp4' else 'image',now()));c.commit();c.close();return go('/admin/banners',key)
 @app.get('/admin/wallpapers',response_class=HTMLResponse)
 def walls(key:str=''):
     adm(key);c=db();ww=rows(c,'SELECT * FROM wallpapers ORDER BY created_at DESC');c.close();cards=''.join(f'<div class="card"><b>{w["name"]}</b><br><img src="/api/media/{w["filename"]}"></div>' for w in ww);return page('Meus planos de fundo',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/wallpapers/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="image" accept="image/*" required><button>ADD PLANO DE FUNDO</button></form></div><div class="grid">{cards}</div>',key)
 @app.post('/admin/wallpapers/create')
 def wallcreate(key:str,name:str=Form(...),image:UploadFile=File(...)):
-    adm(key);fn=save(image,'wallpaper',{'.png','.jpg','.jpeg','.webp'});c=db();ex(c,'INSERT INTO wallpapers(id,name,filename,created_at) VALUES(?,?,?,?)',(secrets.token_hex(8),name.strip(),fn,now()));c.commit();c.close();return go('/admin/wallpapers',key)
+    adm(key);fn=_save_persistent_media(image,'wallpaper',{'.png','.jpg','.jpeg','.webp'},8*1024*1024);c=db();ex(c,'INSERT INTO wallpapers(id,name,filename,created_at) VALUES(?,?,?,?)',(secrets.token_hex(8),name.strip(),fn,now()));c.commit();c.close();return go('/admin/wallpapers',key)
+
+@app.get('/admin/logos',response_class=HTMLResponse)
+def logos(key:str=''):
+    adm(key);c=db();ll=rows(c,'SELECT * FROM logos ORDER BY created_at DESC');c.close()
+    cards=''.join(f'<div class="card"><b>{x["name"]}</b><br><img style="max-height:180px;object-fit:contain" src="/api/media/{x["filename"]}"></div>' for x in ll)
+    return page('Minhas Logomarcas',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/logos/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="image" accept="image/png,image/jpeg,image/webp" required><button>ADD LOGOMARCA</button></form></div><div class="grid">{cards}</div>',key)
+
+@app.post('/admin/logos/create')
+def logocreate(key:str,name:str=Form(...),image:UploadFile=File(...)):
+    adm(key);fn=_save_persistent_media(image,'logo',{'.png','.jpg','.jpeg','.webp'},5*1024*1024)
+    c=db();ex(c,'INSERT INTO logos(id,name,filename,created_at) VALUES(?,?,?,?)',(secrets.token_hex(8),name.strip(),fn,now()));c.commit();c.close()
+    return go('/admin/logos',key)
 
 @app.get('/admin/plans',response_class=HTMLResponse)
 def plans(key:str=''):
