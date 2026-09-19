@@ -98,10 +98,34 @@ class V21Activity : Activity() {
         status = TextView(this).apply { textSize = 14f; setTextColor(Color.WHITE); setPadding(0, 4, 0, 10) }
         root.addView(header)
         root.addView(status)
+
+        val quick = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        fun qButton(textValue: String, action: () -> Unit): Button = Button(this).apply {
+            text = textValue
+            textSize = 14f
+            isAllCaps = false
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        quick.addView(qButton("Suporte") {
+            Toast.makeText(this, "Suporte: 21 98851-0594", Toast.LENGTH_LONG).show()
+        }, LinearLayout.LayoutParams(150, 54).apply { rightMargin = 6 })
+        quick.addView(qButton("Loja") { showStore() }, LinearLayout.LayoutParams(150, 54).apply { rightMargin = 6 })
+        quick.addView(qButton("Atualizar") { sync() }, LinearLayout.LayoutParams(170, 54).apply { rightMargin = 6 })
+        quick.addView(qButton("Wi-Fi") {
+            try { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) } catch (_: Exception) {}
+        }, LinearLayout.LayoutParams(150, 54).apply { rightMargin = 6 })
+        quick.addView(qButton("Ajustes") {
+            try { startActivity(Intent(Settings.ACTION_SETTINGS)) } catch (_: Exception) {}
+        }, LinearLayout.LayoutParams(160, 54))
+        root.addView(quick, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 8 })
         setContentView(root)
     }
 
-    private fun clearBody() { while (root.childCount > 2) root.removeViewAt(2) }
+    private fun clearBody() { while (root.childCount > 3) root.removeViewAt(3) }
     private fun token() = prefs.getString("device_token", "") ?: ""
 
     private fun activation(error: String = "") {
@@ -168,7 +192,7 @@ class V21Activity : Activity() {
         }
 
         val primaryApps = cfg.apps.take(3)
-        val secondaryApps = cfg.apps.drop(3).take(5)
+        val secondaryApps = cfg.apps.drop(3).take(17)
 
         val hero = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         hero.addView(bannerView(cfg.banners.firstOrNull(), cfg.brandingName), LinearLayout.LayoutParams(0, 330, 1.45f).apply { rightMargin = 12 })
@@ -200,6 +224,46 @@ class V21Activity : Activity() {
             featured.childCount > 0 -> featured.getChildAt(0).requestFocus()
         }
         maybeAutoInstall(cfg.apps)
+    }
+
+    private fun showStore() {
+        clearBody()
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        top.addView(TextView(this).apply {
+            text = "LOJA DE APLICATIVOS"
+            textSize = 24f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, 1)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(Button(this).apply {
+            text = "Voltar"
+            isAllCaps = false
+            isFocusable = true
+            setOnClickListener { sync() }
+        }, LinearLayout.LayoutParams(150, 54))
+        root.addView(top, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 8 })
+
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = true
+            isFillViewport = true
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        apps.take(20).forEach { app ->
+            row.addView(appCard(app, false), LinearLayout.LayoutParams(245, 190).apply { setMargins(6, 4, 6, 4) })
+        }
+        if (apps.isEmpty()) {
+            row.addView(TextView(this).apply {
+                text = "Nenhum aplicativo liberado pelo painel."
+                textSize = 20f
+                setTextColor(Color.WHITE)
+            })
+        }
+        scroll.addView(row)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        if (row.childCount > 0) row.getChildAt(0).requestFocus()
     }
 
     private fun bannerView(b: RemoteBanner?, brand: String): FrameLayout {
