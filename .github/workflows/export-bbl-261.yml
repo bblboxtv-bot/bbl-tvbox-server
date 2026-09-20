@@ -1,0 +1,24 @@
+name: Export BBL Mercado Pago Pix APK 2.6.1
+on:
+  push:
+    paths:
+      - '.github/workflows/export-bbl-261.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK from Render
+        run: |
+          curl -fL --retry 10 --retry-delay 3 "https://bbl-launcher-build-v256b.onrender.com/BBL_BOXTV_2.5.6_ATUALIZAR_CLEAN_UNSIGNED.apk" -o "BBL_BOXTV_2.6.1_MERCADOPAGO_PIX.apk"
+          ls -lh "BBL_BOXTV_2.6.1_MERCADOPAGO_PIX.apk"
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BBL_BOXTV_2.6.1_MERCADOPAGO_PIX
+          path: BBL_BOXTV_2.6.1_MERCADOPAGO_PIX.apk
+          if-no-files-found: error
