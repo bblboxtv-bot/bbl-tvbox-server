@@ -81,7 +81,11 @@ def init():
     except Exception:c.rollback()
     c.close()
 @app.on_event('startup')
-def startup():init()
+def startup():
+    # Em produção PostgreSQL, não refaz toda a migração a cada restart/deploy.
+    # Isso evita bloquear a abertura da porta HTTP enquanto o banco está ocupado.
+    if not pg() or os.getenv('RUN_DB_INIT_ON_STARTUP','0') == '1':
+        init()
 
 def bearer(a):return a.split(' ',1)[1].strip() if a and a.lower().startswith('bearer ') else None
 def adm(k):
