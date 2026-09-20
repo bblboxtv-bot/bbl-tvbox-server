@@ -1,0 +1,21 @@
+name: MP Pix selftest
+on:
+  push:
+    paths:
+      - '.github/workflows/mp-pix-selftest.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait and call selftest
+        run: |
+          sleep 15
+          curl -fsS "https://bbl-tvbox-manager-v2.onrender.com/api/payments/mercadopago/selftest?key=bbl-mp-selftest-20260920-x7k9p4" | tee result.json
+          echo
+          cat result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mp-pix-selftest-result
+          path: result.json
