@@ -43,3 +43,5 @@ jobs:
           name: BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY
           path: BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY.apk
           if-no-files-found: error
+
+# trigger
