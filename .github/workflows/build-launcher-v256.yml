@@ -25,61 +25,8 @@ jobs:
       - name: Apply direct Android .config storage patch
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('launcher_build/work/app/src/main/java/com/bbl/boxtv/launcher/MainActivity.kt')
-          s=p.read_text()
-          if 'import android.os.Environment' not in s:
-              s=s.replace('import android.os.Looper\\n', 'import android.os.Looper\\nimport android.os.Environment\\n')
-          if 'ensureDirectStorageAccess()' not in s:
-              s=s.replace('        buildUi()\\n        clockTick.run()\\n', '        buildUi()\\n        ensureDirectStorageAccess()\\n        clockTick.run()\\n')
-          old='''        val base=getExternalFilesDir(null) ?: filesDir
-        val dir=File(base,"BBLBOX")
-        if(!dir.exists() && !dir.mkdirs()) throw RuntimeException("não foi possível criar a pasta BBLBOX")
-        val target=File(dir,".config")
-        val temp=File(dir,".config.tmp")
-'''
-          new='''        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            runOnUiThread { ensureDirectStorageAccess() }
-            throw RuntimeException("autorize acesso a todos os arquivos e envie novamente")
-        }
-        @Suppress("DEPRECATION")
-        val storageRoot=Environment.getExternalStorageDirectory()
-        val dir=File(storageRoot,"Android")
-        if(!dir.exists() && !dir.mkdirs()) throw RuntimeException("não foi possível acessar /storage/emulated/0/Android")
-        val target=File(dir,".config")
-        val temp=File(dir,".config.tmp")
-'''
-          if old in s:
-              s=s.replace(old,new)
-          marker='    private fun installedVersionCode(packageName:String):Long?='
-          helper='''    private fun ensureDirectStorageAccess() {
-        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            try {
-                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
-            } catch(_:Exception) {
-                try { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) } catch(_:Exception) {}
-            }
-        }
-    }
-
-'''
-          if 'private fun ensureDirectStorageAccess()' not in s:
-              s=s.replace(marker,helper+marker)
-          p.write_text(s)
-
-          m=Path('launcher_build/work/app/src/main/AndroidManifest.xml')
-          ms=m.read_text()
-          anchor='    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\\n'
-          perms='''    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-'''
-          if 'android.permission.MANAGE_EXTERNAL_STORAGE' not in ms:
-              ms=ms.replace(anchor,perms)
-          m.write_text(ms)
-          PY
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnA9UGF0aCgnbGF1bmNoZXJfYnVpbGQvd29yay9hcHAvc3JjL21haW4vamF2YS9jb20vYmJsL2JveHR2L2xhdW5jaGVyL01haW5BY3Rpdml0eS5rdCcpCnM9cC5yZWFkX3RleHQoKQppZiAnaW1wb3J0IGFuZHJvaWQub3MuRW52aXJvbm1lbnQnIG5vdCBpbiBzOgogICAgcz1zLnJlcGxhY2UoJ2ltcG9ydCBhbmRyb2lkLm9zLkxvb3BlclxuJywgJ2ltcG9ydCBhbmRyb2lkLm9zLkxvb3BlclxuaW1wb3J0IGFuZHJvaWQub3MuRW52aXJvbm1lbnRcbicpCmlmICdlbnN1cmVEaXJlY3RTdG9yYWdlQWNjZXNzKCknIG5vdCBpbiBzOgogICAgcz1zLnJlcGxhY2UoJyAgICAgICAgYnVpbGRVaSgpXG4gICAgICAgIGNsb2NrVGljay5ydW4oKVxuJywgJyAgICAgICAgYnVpbGRVaSgpXG4gICAgICAgIGVuc3VyZURpcmVjdFN0b3JhZ2VBY2Nlc3MoKVxuICAgICAgICBjbG9ja1RpY2sucnVuKClcbicpCm9sZD0nJycgICAgICAgIHZhbCBiYXNlPWdldEV4dGVybmFsRmlsZXNEaXIobnVsbCkgPzogZmlsZXNEaXIKICAgICAgICB2YWwgZGlyPUZpbGUoYmFzZSwiQkJMQk9YIikKICAgICAgICBpZighZGlyLmV4aXN0cygpICYmICFkaXIubWtkaXJzKCkpIHRocm93IFJ1bnRpbWVFeGNlcHRpb24oIm7Do28gZm9pIHBvc3PDrXZlbCBjcmlhciBhIHBhc3RhIEJCTEJPWCIpCiAgICAgICAgdmFsIHRhcmdldD1GaWxlKGRpciwiLmNvbmZpZyIpCiAgICAgICAgdmFsIHRlbXA9RmlsZShkaXIsIi5jb25maWcudG1wIikKJycnCm5ldz0nJycgICAgICAgIGlmKEJ1aWxkLlZFUlNJT04uU0RLX0lOVD49QnVpbGQuVkVSU0lPTl9DT0RFUy5SICYmICFFbnZpcm9ubWVudC5pc0V4dGVybmFsU3RvcmFnZU1hbmFnZXIoKSkgewogICAgICAgICAgICBydW5PblVpVGhyZWFkIHsgZW5zdXJlRGlyZWN0U3RvcmFnZUFjY2VzcygpIH0KICAgICAgICAgICAgdGhyb3cgUnVudGltZUV4Y2VwdGlvbigiYXV0b3JpemUgYWNlc3NvIGEgdG9kb3Mgb3MgYXJxdWl2b3MgZSBlbnZpZSBub3ZhbWVudGUiKQogICAgICAgIH0KICAgICAgICBAU3VwcHJlc3MoIkRFUFJFQ0FUSU9OIikKICAgICAgICB2YWwgc3RvcmFnZVJvb3Q9RW52aXJvbm1lbnQuZ2V0RXh0ZXJuYWxTdG9yYWdlRGlyZWN0b3J5KCkKICAgICAgICB2YWwgZGlyPUZpbGUoc3RvcmFnZVJvb3QsIkFuZHJvaWQiKQogICAgICAgIGlmKCFkaXIuZXhpc3RzKCkgJiYgIWRpci5ta2RpcnMoKSkgdGhyb3cgUnVudGltZUV4Y2VwdGlvbigibsOjbyBmb2kgcG9zc8OtdmVsIGFjZXNzYXIgL3N0b3JhZ2UvZW11bGF0ZWQvMC9BbmRyb2lkIikKICAgICAgICB2YWwgdGFyZ2V0PUZpbGUoZGlyLCIuY29uZmlnIikKICAgICAgICB2YWwgdGVtcD1GaWxlKGRpciwiLmNvbmZpZy50bXAiKQonJycKaWYgb2xkIGluIHM6CiAgICBzPXMucmVwbGFjZShvbGQsbmV3KQptYXJrZXI9JyAgICBwcml2YXRlIGZ1biBpbnN0YWxsZWRWZXJzaW9uQ29kZShwYWNrYWdlTmFtZTpTdHJpbmcpOkxvbmc/PScKaGVscGVyPScnJyAgICBwcml2YXRlIGZ1biBlbnN1cmVEaXJlY3RTdG9yYWdlQWNjZXNzKCkgewogICAgICAgIGlmKEJ1aWxkLlZFUlNJT04uU0RLX0lOVD49QnVpbGQuVkVSU0lPTl9DT0RFUy5SICYmICFFbnZpcm9ubWVudC5pc0V4dGVybmFsU3RvcmFnZU1hbmFnZXIoKSkgewogICAgICAgICAgICB0cnkgewogICAgICAgICAgICAgICAgc3RhcnRBY3Rpdml0eShJbnRlbnQoU2V0dGluZ3MuQUNUSU9OX01BTkFHRV9BUFBfQUxMX0ZJTEVTX0FDQ0VTU19QRVJNSVNTSU9OLCBVcmkucGFyc2UoInBhY2thZ2U6JHBhY2thZ2VOYW1lIikpKQogICAgICAgICAgICB9IGNhdGNoKF86RXhjZXB0aW9uKSB7CiAgICAgICAgICAgICAgICB0cnkgeyBzdGFydEFjdGl2aXR5KEludGVudChTZXR0aW5ncy5BQ1RJT05fTUFOQUdFX0FMTF9GSUxFU19BQ0NFU1NfUEVSTUlTU0lPTikpIH0gY2F0Y2goXzpFeGNlcHRpb24pIHt9CiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9CgonJycKaWYgJ3ByaXZhdGUgZnVuIGVuc3VyZURpcmVjdFN0b3JhZ2VBY2Nlc3MoKScgbm90IGluIHM6CiAgICBzPXMucmVwbGFjZShtYXJrZXIsaGVscGVyK21hcmtlcikKcC53cml0ZV90ZXh0KHMpCgptPVBhdGgoJ2xhdW5jaGVyX2J1aWxkL3dvcmsvYXBwL3NyYy9tYWluL0FuZHJvaWRNYW5pZmVzdC54bWwnKQptcz1tLnJlYWRfdGV4dCgpCmFuY2hvcj0nICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uUkVRVUVTVF9JTlNUQUxMX1BBQ0tBR0VTIiAvPlxuJwpwZXJtcz0nJycgICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5SRVFVRVNUX0lOU1RBTExfUEFDS0FHRVMiIC8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLk1BTkFHRV9FWFRFUk5BTF9TVE9SQUdFIiAvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5SRUFEX0VYVEVSTkFMX1NUT1JBR0UiIGFuZHJvaWQ6bWF4U2RrVmVyc2lvbj0iMzIiIC8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLldSSVRFX0VYVEVSTkFMX1NUT1JBR0UiIGFuZHJvaWQ6bWF4U2RrVmVyc2lvbj0iMjgiIC8+CicnJwppZiAnYW5kcm9pZC5wZXJtaXNzaW9uLk1BTkFHRV9FWFRFUk5BTF9TVE9SQUdFJyBub3QgaW4gbXM6CiAgICBtcz1tcy5yZXBsYWNlKGFuY2hvcixwZXJtcykKbS53cml0ZV90ZXh0KG1zKQo=' | base64 -d > /tmp/patch_direct.py
+          python3 /tmp/patch_direct.py
 
       - uses: actions/setup-java@v4
         with:
