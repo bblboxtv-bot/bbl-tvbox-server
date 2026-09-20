@@ -1,4 +1,4 @@
-name: Export BBL Pix APK
+name: Export BBL Pix APK 2.5.9
 on:
   push:
     paths:
