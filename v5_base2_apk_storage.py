@@ -43,8 +43,10 @@ def base2_download_apk(requested_id:str):
     stored,meta=_find_ready_equivalent(c,a); c.close()
     if stored and meta:
         filename=stored.get('filename') or ((stored.get('name') or 'aplicativo')+'.apk')
-        headers={'Content-Length':str(meta['size_bytes']),'Content-Disposition':f'attachment; filename="{filename}"','Cache-Control':'no-store'}
-        return StreamingResponse(_chunk_stream(stored['id'],meta['chunk_count']),media_type='application/vnd.android.package-archive',headers=headers)
+        # No VPS, chunk_count=0 significa que o APK está no volume persistente.
+        if int(meta.get('chunk_count') or 0) > 0:
+            headers={'Content-Length':str(meta['size_bytes']),'Content-Disposition':f'attachment; filename="{filename}"','Cache-Control':'no-store'}
+            return StreamingResponse(_chunk_stream(stored['id'],meta['chunk_count']),media_type='application/vnd.android.package-archive',headers=headers)
     p=v5.UPLOAD_DIR/a['filename']
     if p.exists():
         return v5.FileResponse(p,media_type='application/vnd.android.package-archive',filename=a['filename'])
