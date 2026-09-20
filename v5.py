@@ -55,11 +55,12 @@ def init():
       "CREATE TABLE IF NOT EXISTS launcher_v55_profile(id TEXT PRIMARY KEY,app_ids TEXT NOT NULL DEFAULT '[]',device_ids TEXT NOT NULL DEFAULT '[]',updated_at TEXT)",
       "CREATE TABLE IF NOT EXISTS media_files(filename TEXT PRIMARY KEY,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,data BYTEA NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS device_files(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,original_name TEXT NOT NULL DEFAULT '',size_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',data BYTEA NOT NULL,created_at TEXT)",
-      "CREATE TABLE IF NOT EXISTS logos(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)"
+      "CREATE TABLE IF NOT EXISTS logos(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)",
+      "CREATE TABLE IF NOT EXISTS launcher_updates(id TEXT PRIMARY KEY,version_name TEXT NOT NULL,version_code INTEGER NOT NULL,size_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',mandatory INTEGER NOT NULL DEFAULT 1,published INTEGER NOT NULL DEFAULT 1,notes TEXT NOT NULL DEFAULT '',data BYTEA NOT NULL,created_at TEXT)"
     ]:ex(c,s)
     c.commit()
     for s in [
-      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE layouts ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN wallpaper_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'"
+      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE layouts ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN wallpaper_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]',"ALTER TABLE activation_keys ADD COLUMN bound_device_id TEXT","ALTER TABLE devices ADD COLUMN hardware_key TEXT NOT NULL DEFAULT ''"
     ]:col(c,s)
     try:ex(c,'INSERT INTO activation_keys(key,enabled,label,created_at) VALUES(?,?,?,?)',(ACTIVATION_KEY,1,'Chave padrão',now()));c.commit()
     except Exception:c.rollback()
@@ -92,7 +93,7 @@ def apkmeta(p):
 
 class Enroll(BaseModel):
     activationCode:Optional[str]=None;activation:Optional[str]=None;activation_code:Optional[str]=None;enrollmentKey:Optional[str]=None;deviceId:Optional[str]=None;device_id:Optional[str]=None
-    manufacturer:Optional[str]=None;model:Optional[str]=None;android_version:Optional[str]=None;launcher_version:Optional[str]=None
+    manufacturer:Optional[str]=None;model:Optional[str]=None;android_version:Optional[str]=None;launcher_version:Optional[str]=None;hardware_key:Optional[str]=None
 class CmdResult(BaseModel):status:str='done';result:str=''
 
 @app.get('/health')
@@ -101,9 +102,8 @@ def health():return {'ok':True,'service':'bbl-boxtv-manager','version':'5.0.0'}
 def enroll(b:Enroll):
     key=b.activationCode or b.activation or b.activation_code or b.enrollmentKey
     if not key:raise HTTPException(400,'activation key required')
-    # TV keyboards can insert spaces or change case. Compare activation codes
-    # normalized so a valid panel code is not rejected because of formatting.
     norm=''.join(ch for ch in str(key).upper() if ch.isalnum())
+    incoming_hardware=(b.hardware_key or '').strip().lower()
     c=db()
     k=None
     for candidate in rows(c,'SELECT * FROM activation_keys WHERE enabled=1'):
@@ -111,14 +111,45 @@ def enroll(b:Enroll):
       if cand_norm==norm:
         k=candidate
         break
-    if not k:c.close();raise HTTPException(403,'invalid activation key')
-    did=b.deviceId or b.device_id or secrets.token_hex(5).upper();d=one(c,'SELECT * FROM devices WHERE id=?',(did,))
+    if not k:
+      c.close();raise HTTPException(403,'invalid activation key')
+
+    bound=(k.get('bound_device_id') or '').strip()
+    if bound:
+      d=one(c,'SELECT * FROM devices WHERE id=?',(bound,))
+      if not d:
+        ex(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE key=?',(k['key'],));c.commit();bound=''
+      else:
+        saved_hw=(d.get('hardware_key') or '').strip().lower()
+        if saved_hw and incoming_hardware and not secrets.compare_digest(saved_hw,incoming_hardware):
+          c.close();raise HTTPException(409,'este código de ativação já pertence a outro aparelho')
+        if incoming_hardware and not saved_hw:
+          ex(c,'UPDATE devices SET hardware_key=? WHERE id=?',(incoming_hardware,bound))
+        ex(c,'UPDATE devices SET last_seen=?,manufacturer=?,model=?,android_version=?,launcher_version=? WHERE id=?',
+           (now(),b.manufacturer or d.get('manufacturer') or '',b.model or d.get('model') or '',b.android_version or d.get('android_version') or '',b.launcher_version or d.get('launcher_version') or '',bound))
+        c.commit()
+        token=d['token']
+        c.close()
+        return {'device_id':bound,'device_token':token,'deviceId':bound,'deviceToken':token,'token':token,'status':'ok','reused':True}
+
+    did=(b.deviceId or b.device_id or '').strip() or secrets.token_hex(5).upper()
+    d=one(c,'SELECT * FROM devices WHERE id=?',(did,))
     if d:
       token=d['token']
-      ex(c,'UPDATE devices SET last_seen=?,manufacturer=?,model=?,android_version=?,launcher_version=? WHERE id=?',(now(),b.manufacturer or d.get('manufacturer') or '',b.model or d.get('model') or '',b.android_version or d.get('android_version') or '',b.launcher_version or d.get('launcher_version') or '',did))
+      saved_key=(d.get('activation_key') or '').strip()
+      if saved_key and ''.join(ch for ch in saved_key.upper() if ch.isalnum())!=norm:
+        c.close();raise HTTPException(409,'este aparelho já está vinculado a outra ativação')
+      ex(c,'UPDATE devices SET activation_key=?,last_seen=?,manufacturer=?,model=?,android_version=?,launcher_version=?,hardware_key=? WHERE id=?',
+         (k['key'],now(),b.manufacturer or d.get('manufacturer') or '',b.model or d.get('model') or '',b.android_version or d.get('android_version') or '',b.launcher_version or d.get('launcher_version') or '',incoming_hardware or d.get('hardware_key') or '',did))
     else:
-      token=secrets.token_urlsafe(32);ex(c,'INSERT INTO devices(id,token,activation_key,created_at,last_seen,manufacturer,model,android_version,launcher_version,reseller_id) VALUES(?,?,?,?,?,?,?,?,?,?)',(did,token,key,now(),now(),b.manufacturer or '',b.model or '',b.android_version or '',b.launcher_version or '',k.get('reseller_id')));log(c,did,'enroll','device activated')
-    c.commit();c.close();return {'device_id':did,'device_token':token,'deviceId':did,'deviceToken':token,'token':token,'status':'ok'}
+      token=secrets.token_urlsafe(32)
+      ex(c,'INSERT INTO devices(id,token,activation_key,created_at,last_seen,manufacturer,model,android_version,launcher_version,reseller_id,hardware_key) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+         (did,token,k['key'],now(),now(),b.manufacturer or '',b.model or '',b.android_version or '',b.launcher_version or '',k.get('reseller_id'),incoming_hardware))
+      try:log(c,did,'enroll','device activated')
+      except Exception:pass
+    ex(c,'UPDATE activation_keys SET bound_device_id=? WHERE key=?',(did,k['key']))
+    c.commit();c.close()
+    return {'device_id':did,'device_token':token,'deviceId':did,'deviceToken':token,'token':token,'status':'ok','reused':False}
 
 def payload(c,d):
     ids=[];lay=None
@@ -424,18 +455,18 @@ def appreplace(aid:str,key:str,apk:UploadFile=File(...)):
 LAUNCHER_UPDATE_META=UPLOAD_DIR/'launcher_update.json'
 
 def _load_launcher_update():
+    c=db()
     try:
-      if LAUNCHER_UPDATE_META.exists():
-        x=json.loads(LAUNCHER_UPDATE_META.read_text(encoding='utf-8'))
-        return x if isinstance(x,dict) else None
-    except Exception:
-      pass
+      r=one(c,'SELECT id,version_name,version_code,size_bytes,sha256,mandatory,published,notes,created_at FROM launcher_updates ORDER BY version_code DESC,created_at DESC LIMIT 1')
+      if r:
+        r['mandatory']=bool(r.get('mandatory'));r['published']=bool(r.get('published'))
+        return r
+    finally:
+      c.close()
     return None
 
 def _save_launcher_update(x):
-    tmp=UPLOAD_DIR/'launcher_update.tmp'
-    tmp.write_text(json.dumps(x,ensure_ascii=False,indent=2),encoding='utf-8')
-    tmp.replace(LAUNCHER_UPDATE_META)
+    return x
 
 @app.get('/admin/launcher-update',response_class=HTMLResponse)
 def launcher_update_page(key:str=''):
@@ -446,72 +477,58 @@ def launcher_update_page(key:str=''):
       status='PUBLICADA' if u.get('published') else 'DESATIVADA'
       mandatory='OBRIGATÓRIA' if u.get('mandatory') else 'OPCIONAL'
       card=f'''<div class="card"><h3>Versão {u.get("version_name","-")} <span class="ok">{status}</span></h3><div class="muted">Código {u.get("version_code","-")} • {mandatory} • {u.get("created_at","-")}</div><div>{u.get("notes","")}</div><div class="nav"><a href="/api/launcher/download">Baixar APK</a><form method="post" action="/admin/launcher-update/toggle?key={key}" style="display:inline"><button>{'Despublicar' if u.get('published') else 'Publicar'}</button></form></div></div>'''
-    form=f'''<div class="card"><h3>Publicar nova atualização</h3><form enctype="multipart/form-data" method="post" action="/admin/launcher-update/publish?key={key}"><input name="version_name" placeholder="Versão, ex: 2.5.6" required><input name="version_code" type="number" placeholder="Código da versão, ex: 256" required><textarea name="notes" placeholder="Notas da atualização"></textarea><label><input style="width:auto" type="checkbox" name="mandatory" value="1"> Atualização obrigatória</label><input type="file" name="apk" accept=".apk" required><button>PUBLICAR ATUALIZAÇÃO</button></form></div>'''
-    return page('Atualização da Launcher',form+(card or '<div class="card">Nenhuma atualização publicada.</div>'),key)
+    form=f'''<div class="card"><h3>Publicar nova atualização automática</h3><div class="muted">As Boxes verificam esta versão automaticamente e instalam quando o APK tiver assinatura BBL compatível.</div><form enctype="multipart/form-data" method="post" action="/admin/launcher-update/publish?key={key}"><input name="version_name" placeholder="Versão, ex: 2.6.4" required><input name="version_code" type="number" placeholder="Código da versão, ex: 266" required><textarea name="notes" placeholder="Notas da atualização"></textarea><label><input style="width:auto" type="checkbox" name="mandatory" value="1" checked> Atualização obrigatória</label><input type="file" name="apk" accept=".apk" required><button>PUBLICAR PARA TODAS AS BOXES</button></form></div>'''
+    return page('Atualização Automática da Launcher',form+(card or '<div class="card">Nenhuma atualização publicada.</div>'),key)
 
 @app.post('/admin/launcher-update/publish')
 def launcher_update_publish(key:str,version_name:str=Form(...),version_code:int=Form(...),notes:str=Form(''),mandatory:Optional[str]=Form(None),apk:UploadFile=File(...)):
     adm(key)
     if version_code < 1: raise HTTPException(400,'version_code inválido')
-    old=_load_launcher_update() or {}
-    oldfile=UPLOAD_DIR/str(old.get('filename') or '')
-    fn=save(apk,'launcher_update',{'.apk'})
-    p=UPLOAD_DIR/fn
-    x={
-      'id':secrets.token_hex(8),
-      'version_name':version_name.strip(),
-      'version_code':int(version_code),
-      'filename':fn,
-      'size_bytes':p.stat().st_size,
-      'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
-      'mandatory':bool(mandatory),
-      'published':True,
-      'notes':notes.strip(),
-      'created_at':now()
-    }
-    _save_launcher_update(x)
-    if oldfile.exists() and oldfile != p:
-      try:oldfile.unlink()
-      except Exception:pass
+    data=apk.file.read(20*1024*1024+1)
+    if not data:raise HTTPException(400,'APK vazio')
+    if len(data)>20*1024*1024:raise HTTPException(413,'APK maior que 20 MB')
+    sha=hashlib.sha256(data).hexdigest()
+    c=db()
+    try:
+      ex(c,'UPDATE launcher_updates SET published=0 WHERE published=1')
+      ex(c,'INSERT INTO launcher_updates(id,version_name,version_code,size_bytes,sha256,mandatory,published,notes,data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+         (secrets.token_hex(10),version_name.strip(),int(version_code),len(data),sha,1 if mandatory else 0,1,notes.strip(),data,now()))
+      c.commit()
+    except Exception:
+      c.rollback();raise
+    finally:c.close()
     return go('/admin/launcher-update',key)
 
 @app.post('/admin/launcher-update/toggle')
 def launcher_update_toggle(key:str):
     adm(key)
-    u=_load_launcher_update()
-    if not u: raise HTTPException(404)
-    u['published']=not bool(u.get('published'))
-    _save_launcher_update(u)
+    c=db()
+    try:
+      u=one(c,'SELECT id,published FROM launcher_updates ORDER BY version_code DESC,created_at DESC LIMIT 1')
+      if not u:raise HTTPException(404)
+      ex(c,'UPDATE launcher_updates SET published=? WHERE id=?',(0 if u.get('published') else 1,u['id']))
+      c.commit()
+    finally:c.close()
     return go('/admin/launcher-update',key)
 
 @app.get('/api/launcher/download')
 def launcher_update_download():
-    u=_load_launcher_update()
-    if not u: raise HTTPException(404)
-    p=UPLOAD_DIR/str(u.get('filename') or '')
-    if not p.exists(): raise HTTPException(404,'APK não encontrado')
-    return FileResponse(p,media_type='application/vnd.android.package-archive',filename=f'BBL_BOXTV_{u.get("version_name","update")}.apk')
+    c=db()
+    try:
+      u=one(c,'SELECT version_name,data FROM launcher_updates WHERE published=1 ORDER BY version_code DESC,created_at DESC LIMIT 1')
+      if not u:raise HTTPException(404)
+      data=bytes(u.get('data') or b'')
+      return Response(content=data,media_type='application/vnd.android.package-archive',headers={'Content-Disposition':f'attachment; filename="BBL_BOXTV_{u.get("version_name") or "update"}.apk"','Content-Length':str(len(data))})
+    finally:c.close()
 
 @app.get('/api/devices/{did}/launcher-update')
 def launcher_update_check(did:str,current_version_code:int=0,authorization:Optional[str]=Header(None)):
-    c=db()
-    authdev(c,did,authorization)
+    c=db();authdev(c,did,authorization)
+    u=one(c,'SELECT id,version_name,version_code,size_bytes,sha256,mandatory,published,notes,created_at FROM launcher_updates WHERE published=1 ORDER BY version_code DESC,created_at DESC LIMIT 1')
     c.close()
-    u=_load_launcher_update()
-    if not u or not u.get('published'):
-      return {'update_available':False}
-    available=int(u.get('version_code') or 0) > int(current_version_code or 0)
-    return {
-      'update_available':available,
-      'version_name':u.get('version_name') or '',
-      'version_code':int(u.get('version_code') or 0),
-      'mandatory':bool(u.get('mandatory')),
-      'notes':u.get('notes') or '',
-      'size_bytes':int(u.get('size_bytes') or 0),
-      'sha256':u.get('sha256') or '',
-      'download_url':'/api/launcher/download' if available else ''
-    }
-
+    if not u:return {'update_available':False}
+    available=int(u.get('version_code') or 0)>int(current_version_code or 0)
+    return {'update_available':available,'version_name':u.get('version_name') or '','version_code':int(u.get('version_code') or 0),'mandatory':bool(u.get('mandatory')),'notes':u.get('notes') or '','size_bytes':int(u.get('size_bytes') or 0),'sha256':u.get('sha256') or '','download_url':'/api/launcher/download' if available else ''}
 
 V55_LAYOUT_ID='bbl-v55-principal'
 V55_META=UPLOAD_DIR/'launcher_v55.json'
