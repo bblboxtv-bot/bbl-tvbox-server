@@ -11,7 +11,7 @@ import v5
 
 MP_ACCESS_TOKEN = (os.getenv('MERCADO_PAGO_ACCESS_TOKEN') or '').strip()
 MP_WEBHOOK_SECRET = (os.getenv('MERCADO_PAGO_WEBHOOK_SECRET') or '').strip()
-MP_PAYER_EMAIL = (os.getenv('MERCADO_PAGO_PAYER_EMAIL') or 'cliente@bbl.boxtv').strip()
+MP_PAYER_EMAIL = (os.getenv('MERCADO_PAGO_PAYER_EMAIL') or 'bbl.boxtv@gmail.com').strip()
 MP_NOTIFICATION_URL = (os.getenv('MERCADO_PAGO_NOTIFICATION_URL') or '').strip()
 
 INFINITEPAY_HANDLE = (os.getenv('INFINITEPAY_HANDLE') or '').strip().lstrip('$')
@@ -27,7 +27,7 @@ def _now():
 
 
 def _payments_enabled():
-    return bool(INFINITEPAY_HANDLE or MP_ACCESS_TOKEN)
+    return bool(MP_ACCESS_TOKEN)
 
 
 def init_payments():
@@ -211,11 +211,9 @@ def create_pix(did: str, body: PaymentCreateBody = PaymentCreateBody(), authoriz
     c, d = _auth_device(did, authorization)
     try:
         current = latest_payment_for_device(c, did)
-        if current and not body.force_new and current.get('status') in ('pending', 'in_process'):
-            if INFINITEPAY_HANDLE:
-                if current.get('provider') == 'infinitepay' and current.get('ticket_url'):
-                    return _payment_payload(current)
-            elif current.get('qr_code'):
+        if current and not body.force_new and current.get('provider') == 'mercadopago' and current.get('status') in ('pending', 'in_process'):
+            q = (current.get('qr_code') or '').strip()
+            if q.startswith('000201') and 'br.gov.bcb.pix' in q.lower() and '6304' in q:
                 return _payment_payload(current)
 
         billing = _billing_for_device(c, d)
@@ -226,21 +224,6 @@ def create_pix(did: str, body: PaymentCreateBody = PaymentCreateBody(), authoriz
         local_id = secrets.token_hex(12)
         external_reference = f'BBL-{did}-{local_id[:12]}'[:64]
         description = f'BBL.BOXTV - {(billing.get("plan_name") or "Mensalidade")} - {d.get("display_name") or did}'
-
-        # Preferência: InfinitePay. O checkout gera Pix e notifica nosso webhook.
-        if INFINITEPAY_HANDLE:
-            inf = _infinite_create_link(external_reference, amount_cents, description)
-            checkout_url = (inf.get('url') or '').strip()
-            v5.ex(c, 'INSERT INTO payments(id,device_id,provider,provider_payment_id,external_reference,amount_cents,status,qr_code,qr_code_base64,ticket_url,created_at,updated_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                  (local_id, did, 'infinitepay', '', external_reference, amount_cents, 'pending', '', '', checkout_url, _now(), _now(), ''))
-            try:
-                v5.log(c, did, 'payment_infinitepay_created', f'{external_reference}:{amount_cents}')
-            except Exception:
-                pass
-            c.commit()
-            return _payment_payload(v5.one(c, 'SELECT * FROM payments WHERE id=?', (local_id,)))
-
-        # Fallback antigo: Mercado Pago.
         amount = amount_cents / 100.0
         idempotency_key = secrets.token_hex(16)
         req_body = {
@@ -252,16 +235,25 @@ def create_pix(did: str, body: PaymentCreateBody = PaymentCreateBody(), authoriz
         }
         if MP_NOTIFICATION_URL:
             req_body['notification_url'] = MP_NOTIFICATION_URL
+
         mp = _mp('POST', '/v1/payments', req_body, idempotency_key)
         td = (((mp.get('point_of_interaction') or {}).get('transaction_data')) or {})
         provider_id = str(mp.get('id') or '')
         status = mp.get('status') or 'pending'
-        qr_code = td.get('qr_code') or ''
+        qr_code = (td.get('qr_code') or '').strip()
         qr_base64 = td.get('qr_code_base64') or ''
         ticket_url = td.get('ticket_url') or ''
         exp = mp.get('date_of_expiration') or ''
+
+        if not (qr_code.startswith('000201') and 'br.gov.bcb.pix' in qr_code.lower() and '6304' in qr_code):
+            raise HTTPException(502, {'provider':'mercadopago','detail':'Mercado Pago respondeu sem BR Code Pix válido','payment_id':provider_id,'status':status})
+
         v5.ex(c, 'INSERT INTO payments(id,device_id,provider,provider_payment_id,external_reference,amount_cents,status,qr_code,qr_code_base64,ticket_url,created_at,updated_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
               (local_id, did, 'mercadopago', provider_id, external_reference, amount_cents, status, qr_code, qr_base64, ticket_url, _now(), _now(), exp))
+        try:
+            v5.log(c,did,'payment_pix_created',f'{provider_id}:{amount_cents}:{status}')
+        except Exception:
+            pass
         c.commit()
         return _payment_payload(v5.one(c, 'SELECT * FROM payments WHERE id=?', (local_id,)))
     finally:
