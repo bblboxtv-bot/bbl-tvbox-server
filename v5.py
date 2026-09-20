@@ -17,7 +17,22 @@ def pg():return DATABASE_URL.startswith(('postgres://','postgresql://'))
 def db():
     if pg():
         import psycopg
-        return psycopg.connect(DATABASE_URL.replace('postgres://','postgresql://',1),autocommit=False)
+        # Produção: falha rápido em rede ruim e encerra conexões esquecidas.
+        # Isso evita acumular dezenas de sessões no PostgreSQL quando uma rota
+        # termina por exceção antes do c.close().
+        dsn=DATABASE_URL.replace('postgres://','postgresql://',1)
+        connect_timeout=max(2,int(os.getenv('DB_CONNECT_TIMEOUT','5')))
+        idle_ms=max(15000,int(os.getenv('DB_IDLE_SESSION_TIMEOUT_MS','60000')))
+        statement_ms=max(5000,int(os.getenv('DB_STATEMENT_TIMEOUT_MS','30000')))
+        lock_ms=max(1000,int(os.getenv('DB_LOCK_TIMEOUT_MS','5000')))
+        options=f'-c idle_session_timeout={idle_ms} -c statement_timeout={statement_ms} -c lock_timeout={lock_ms}'
+        return psycopg.connect(
+            dsn,
+            autocommit=False,
+            connect_timeout=connect_timeout,
+            application_name='bbl-tvbox-manager',
+            options=options,
+        )
     import sqlite3
     p=DATABASE_URL.replace('sqlite:///','',1) if DATABASE_URL.startswith('sqlite:///') else DATABASE_URL
     c=sqlite3.connect(p);c.row_factory=sqlite3.Row;return c
