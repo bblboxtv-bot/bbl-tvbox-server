@@ -301,7 +301,7 @@ def _save_persistent_media(u,prefix,allowed,max_bytes):
     c=db();ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,mime,len(data),data,now()));c.commit();c.close()
     return fn
 
-CSS='''*{box-sizing:border-box}body{margin:0;background:#081526;color:#fff;font:15px Arial}.top{height:62px;background:#0d1d33;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}.wrap{padding:18px;max-width:1500px;margin:auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}.nav a,button{background:#287ff1;color:#fff;border:0;border-radius:8px;padding:10px 14px;text-decoration:none;cursor:pointer}.card{background:#0f2139;border:1px solid #24364d;border-radius:10px;padding:15px;margin:10px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.muted{color:#9badc3}.ok{color:#24cf67}.bad{color:#ff5864}input,select,textarea{width:100%;background:#071323;color:#fff;border:1px solid #334760;border-radius:7px;padding:10px;margin:5px 0 10px}h1{margin:5px 0 0}.hero{padding:16px;background:#0d1d33;border-radius:10px}.wide{width:100%;font-size:18px}.danger{background:#d83a4d}.good{background:#24a85a}img{max-width:100%}'''
+CSS='''*{box-sizing:border-box}body{margin:0;background:#081526;color:#fff;font:15px Arial}.top{height:62px;background:#0d1d33;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}.wrap{padding:18px;max-width:1500px;margin:auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}.nav a,button{background:#287ff1;color:#fff;border:0;border-radius:8px;padding:10px 14px;text-decoration:none;cursor:pointer}.card{position:relative;background:#0f2139;border:1px solid #24364d;border-radius:10px;padding:15px;margin:10px 0}.delete-x{position:absolute;top:8px;right:8px;margin:0}.delete-x button{background:#b72d3b;padding:5px 9px;border-radius:50%;font-size:16px;line-height:18px;min-width:30px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.muted{color:#9badc3}.ok{color:#24cf67}.bad{color:#ff5864}input,select,textarea{width:100%;background:#071323;color:#fff;border:1px solid #334760;border-radius:7px;padding:10px;margin:5px 0 10px}h1{margin:5px 0 0}.hero{padding:16px;background:#0d1d33;border-radius:10px}.wide{width:100%;font-size:18px}.danger{background:#d83a4d}.good{background:#24a85a}img{max-width:100%}'''
 def nav(k):
     x=[('Dispositivos','/'),('Ativações','/admin/activation-keys'),('Layouts','/admin/layouts'),('Aplicativos','/admin/apps'),('Banners','/admin/banners'),('Planos de fundo','/admin/wallpapers'),('Logomarca','/admin/logos'),('Planos','/admin/plans'),('Revendas','/admin/resellers'),('Comandos','/admin/commands'),('Notificações','/admin/notifications'),('Launcher V5.5','/admin/launcher-v55'),('Atualização Launcher','/admin/launcher-update'),('LOGs','/admin/logs')]
     return '<div class="nav">'+''.join(f'<a href="{u}?key={k}">{n}</a>' for n,u in x)+'</div>'
@@ -313,7 +313,7 @@ def home(key:str=''):
     if not key or not secrets.compare_digest(key,ADMIN_KEY):return page('Painel','<div class="card"><form><input name="key" type="password" placeholder="ADMIN_KEY"><button>Entrar</button></form></div>')
     c=db();ds=rows(c,'SELECT * FROM devices ORDER BY created_at DESC');c.close();cards=''
     for d in ds:
-      st='BLOQUEADO' if d.get('locked') else 'ATIVO';cl='bad' if d.get('locked') else 'ok';cards+=f'<div class="card"><h3>{d.get("display_name") or "Sem nome"} <span class="{cl}">{st}</span></h3><div class="muted">ID {d["id"]} • último contato {d.get("last_seen") or "-"}</div><a href="/admin/device/{d["id"]}?key={key}">Gerenciar cliente</a></div>'
+      st='BLOQUEADO' if d.get('locked') else 'ATIVO';cl='bad' if d.get('locked') else 'ok';cards+=f'<div class="card"><form class="delete-x" method="post" action="/admin/device/{d["id"]}/delete?key={key}" onsubmit="return confirm(\'Excluir este dispositivo do painel?\')"><button title="Excluir dispositivo">×</button></form><h3>{d.get("display_name") or "Sem nome"} <span class="{cl}">{st}</span></h3><div class="muted">ID {d["id"]} • último contato {d.get("last_seen") or "-"}</div><a href="/admin/device/{d["id"]}?key={key}">Gerenciar cliente</a></div>'
     return page('Bem vindo(a) BBL.boxtv',f'<div class="hero">Gerencie clientes, aplicativos, banners, temas, planos, revendas e comandos remotos.</div><h2>Dispositivos ({len(ds)})</h2><div class="grid">{cards or "<div class=card>Nenhum dispositivo.</div>"}</div>',key)
 
 @app.get('/admin/device/{did}',response_class=HTMLResponse)
@@ -423,7 +423,7 @@ def apps(key:str=''):
       status='<span class="good">ARQUIVO OK</span>' if ok else '<span class="danger">ARQUIVO AUSENTE</span>'
       replace='' if ok else f'''<form enctype="multipart/form-data" method="post" action="/admin/apps/{a["id"]}/replace?key={key}" style="margin-top:10px">
       <input type="file" name="apk" accept=".apk" required><button>REPOR APK</button></form>'''
-      cards.append(f'<div class="card"><b>{a["name"]}</b><br><span class="muted">{a.get("package_name") or "-"} • {a.get("version_name") or "-"}</span><br>{status}{replace}</div>')
+      cards.append(f'<div class="card"><form class="delete-x" method="post" action="/admin/apps/{a["id"]}/delete?key={key}" onsubmit="return confirm(\'Excluir este aplicativo do painel?\')"><button title="Excluir aplicativo">×</button></form><b>{a["name"]}</b><br><span class="muted">{a.get("package_name") or "-"} • {a.get("version_name") or "-"}</span><br>{status}{replace}</div>')
     c.close()
     return page('Meus Aplicativos',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/apps/upload?key={key}"><input name="name" placeholder="Nome opcional"><input type="file" name="apk" accept=".apk" required><button>ADD APK AUTOMÁTICO</button></form></div><div class="grid">{"".join(cards)}</div>',key)
 @app.post('/admin/apps/upload')
@@ -646,20 +646,20 @@ def launcher_v55_save(key:str,app_ids:list[str]=Form(default=[]),device_ids:list
 
 @app.get('/admin/layouts',response_class=HTMLResponse)
 def layouts(key:str=''):
-    adm(key);c=db();ls=rows(c,'SELECT * FROM layouts ORDER BY created_at DESC');aa=rows(c,'SELECT * FROM apps ORDER BY name');ww=rows(c,'SELECT * FROM wallpapers ORDER BY name');bb=rows(c,'SELECT * FROM banners ORDER BY name');c.close();apps=''.join(f'<label><input style="width:auto" type="checkbox" name="app_ids" value="{a["id"]}"> {a["name"]}</label><br>' for a in aa);walls='<option value="">Sem fundo</option>'+''.join(f'<option value="{w["id"]}">{w["name"]}</option>' for w in ww);bans=''.join(f'<label><input style="width:auto" type="checkbox" name="banner_ids" value="{b["id"]}"> {b["name"]}</label><br>' for b in bb);cards=''.join(f'<div class="card"><b>{l["name"]}</b><br><span class="muted">Apps {len(json.loads(l.get("app_ids") or "[]"))}</span></div>' for l in ls);return page('Meus Layouts',f'<div class="card"><form method="post" action="/admin/layouts/create?key={key}"><input name="name" placeholder="Nome do layout" required><select name="wallpaper_id">{walls}</select><input name="logo_url" placeholder="URL da logo"><h4>Aplicativos</h4>{apps}<h4>Banners</h4>{bans}<button>ADD LAYOUT</button></form></div><div class="grid">{cards}</div>',key)
+    adm(key);c=db();ls=rows(c,'SELECT * FROM layouts ORDER BY created_at DESC');aa=rows(c,'SELECT * FROM apps ORDER BY name');ww=rows(c,'SELECT * FROM wallpapers ORDER BY name');bb=rows(c,'SELECT * FROM banners ORDER BY name');c.close();apps=''.join(f'<label><input style="width:auto" type="checkbox" name="app_ids" value="{a["id"]}"> {a["name"]}</label><br>' for a in aa);walls='<option value="">Sem fundo</option>'+''.join(f'<option value="{w["id"]}">{w["name"]}</option>' for w in ww);bans=''.join(f'<label><input style="width:auto" type="checkbox" name="banner_ids" value="{b["id"]}"> {b["name"]}</label><br>' for b in bb);cards=''.join(f'<div class="card"><form class="delete-x" method="post" action="/admin/layouts/{l["id"]}/delete?key={key}" onsubmit="return confirm(\'Excluir este layout?\')"><button title="Excluir layout">×</button></form><b>{l["name"]}</b><br><span class="muted">Apps {len(json.loads(l.get("app_ids") or "[]"))}</span></div>' for l in ls);return page('Meus Layouts',f'<div class="card"><form method="post" action="/admin/layouts/create?key={key}"><input name="name" placeholder="Nome do layout" required><select name="wallpaper_id">{walls}</select><input name="logo_url" placeholder="URL da logo"><h4>Aplicativos</h4>{apps}<h4>Banners</h4>{bans}<button>ADD LAYOUT</button></form></div><div class="grid">{cards}</div>',key)
 @app.post('/admin/layouts/create')
 def layoutcreate(key:str,name:str=Form(...),wallpaper_id:str=Form(''),logo_url:str=Form(''),app_ids:list[str]=Form(default=[]),banner_ids:list[str]=Form(default=[])):
     adm(key);c=db();ex(c,'INSERT INTO layouts(id,name,app_ids,created_at,wallpaper_id,banner_ids,logo_url) VALUES(?,?,?,?,?,?,?)',(secrets.token_hex(8),name.strip(),json.dumps(app_ids),now(),wallpaper_id or None,json.dumps(banner_ids),logo_url.strip()));c.commit();c.close();return go('/admin/layouts',key)
 
 @app.get('/admin/banners',response_class=HTMLResponse)
 def banners(key:str=''):
-    adm(key);c=db();bb=rows(c,'SELECT * FROM banners ORDER BY created_at DESC');c.close();cards=''.join(f'<div class="card"><b>{b["name"]}</b><br><span class="muted">{b["media_type"]}</span><br>{"<video controls style=max-width:100% src=/api/media/"+b["filename"]+"></video>" if b["media_type"]=="video" else "<img src=/api/media/"+b["filename"]+">"}</div>' for b in bb);return page('Meus Banners',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/banners/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="media" accept="image/*,video/mp4" required><button>ADD BANNER</button></form></div><div class="grid">{cards}</div>',key)
+    adm(key);c=db();bb=rows(c,'SELECT * FROM banners ORDER BY created_at DESC');c.close();cards=''.join(f'<div class="card"><form class="delete-x" method="post" action="/admin/banners/{b["id"]}/delete?key={key}" onsubmit="return confirm(\'Excluir este banner?\')"><button title="Excluir banner">×</button></form><b>{b["name"]}</b><br><span class="muted">{b["media_type"]}</span><br>{"<video controls style=max-width:100% src=/api/media/"+b["filename"]+"></video>" if b["media_type"]=="video" else "<img src=/api/media/"+b["filename"]+">"}</div>' for b in bb);return page('Meus Banners',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/banners/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="media" accept="image/*,video/mp4" required><button>ADD BANNER</button></form></div><div class="grid">{cards}</div>',key)
 @app.post('/admin/banners/create')
 def bannercreate(key:str,name:str=Form(...),media:UploadFile=File(...)):
     adm(key);ext=Path(media.filename or '').suffix.lower();fn=_save_persistent_media(media,'banner',{'.png','.jpg','.jpeg','.webp','.mp4'},25*1024*1024);c=db();ex(c,'INSERT INTO banners(id,name,filename,media_type,created_at) VALUES(?,?,?,?,?)',(secrets.token_hex(8),name.strip(),fn,'video' if ext=='.mp4' else 'image',now()));c.commit();c.close();return go('/admin/banners',key)
 @app.get('/admin/wallpapers',response_class=HTMLResponse)
 def walls(key:str=''):
-    adm(key);c=db();ww=rows(c,'SELECT * FROM wallpapers ORDER BY created_at DESC');c.close();cards=''.join(f'<div class="card"><b>{w["name"]}</b><br><img src="/api/media/{w["filename"]}"></div>' for w in ww);return page('Meus planos de fundo',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/wallpapers/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="image" accept="image/*" required><button>ADD PLANO DE FUNDO</button></form></div><div class="grid">{cards}</div>',key)
+    adm(key);c=db();ww=rows(c,'SELECT * FROM wallpapers ORDER BY created_at DESC');c.close();cards=''.join(f'<div class="card"><form class="delete-x" method="post" action="/admin/wallpapers/{w["id"]}/delete?key={key}" onsubmit="return confirm(\'Excluir este plano de fundo?\')"><button title="Excluir plano de fundo">×</button></form><b>{w["name"]}</b><br><img src="/api/media/{w["filename"]}"></div>' for w in ww);return page('Meus planos de fundo',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/wallpapers/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="image" accept="image/*" required><button>ADD PLANO DE FUNDO</button></form></div><div class="grid">{cards}</div>',key)
 @app.post('/admin/wallpapers/create')
 def wallcreate(key:str,name:str=Form(...),image:UploadFile=File(...)):
     adm(key);fn=_save_persistent_media(image,'wallpaper',{'.png','.jpg','.jpeg','.webp'},8*1024*1024);c=db();ex(c,'INSERT INTO wallpapers(id,name,filename,created_at) VALUES(?,?,?,?)',(secrets.token_hex(8),name.strip(),fn,now()));c.commit();c.close();return go('/admin/wallpapers',key)
@@ -667,7 +667,7 @@ def wallcreate(key:str,name:str=Form(...),image:UploadFile=File(...)):
 @app.get('/admin/logos',response_class=HTMLResponse)
 def logos(key:str=''):
     adm(key);c=db();ll=rows(c,'SELECT * FROM logos ORDER BY created_at DESC');c.close()
-    cards=''.join(f'<div class="card"><b>{x["name"]}</b><br><img style="max-height:180px;object-fit:contain" src="/api/media/{x["filename"]}"></div>' for x in ll)
+    cards=''.join(f'<div class="card"><form class="delete-x" method="post" action="/admin/logos/{x["id"]}/delete?key={key}" onsubmit="return confirm(\'Excluir esta logomarca?\')"><button title="Excluir logomarca">×</button></form><b>{x["name"]}</b><br><img style="max-height:180px;object-fit:contain" src="/api/media/{x["filename"]}"></div>' for x in ll)
     return page('Minhas Logomarcas',f'<div class="card"><form enctype="multipart/form-data" method="post" action="/admin/logos/create?key={key}"><input name="name" placeholder="Nome" required><input type="file" name="image" accept="image/png,image/jpeg,image/webp" required><button>ADD LOGOMARCA</button></form></div><div class="grid">{cards}</div>',key)
 
 @app.post('/admin/logos/create')
@@ -678,7 +678,7 @@ def logocreate(key:str,name:str=Form(...),image:UploadFile=File(...)):
 
 @app.get('/admin/plans',response_class=HTMLResponse)
 def plans(key:str=''):
-    adm(key);c=db();pp=rows(c,'SELECT * FROM plans ORDER BY created_at DESC');ls=rows(c,'SELECT id,name FROM layouts ORDER BY name');c.close();opts='<option value="">Sem layout</option>'+''.join(f'<option value="{x["id"]}">{x["name"]}</option>' for x in ls);cards=''.join(f'<div class="card"><b>{p["name"]}</b><br>{p["days"]} dias • R$ {p["price_cents"]/100:.2f}</div>' for p in pp);return page('Meus Planos',f'<div class="card"><form method="post" action="/admin/plans/create?key={key}"><input name="name" required placeholder="Nome"><input name="days" type="number" value="30"><input name="price" type="number" step="0.01" value="35.00"><select name="layout_id">{opts}</select><button>ADD PLANO</button></form></div>{cards}',key)
+    adm(key);c=db();pp=rows(c,'SELECT * FROM plans ORDER BY created_at DESC');ls=rows(c,'SELECT id,name FROM layouts ORDER BY name');c.close();opts='<option value="">Sem layout</option>'+''.join(f'<option value="{x["id"]}">{x["name"]}</option>' for x in ls);cards=''.join(f'<div class="card"><form class="delete-x" method="post" action="/admin/plans/{p["id"]}/delete?key={key}" onsubmit="return confirm(\'Excluir este plano?\')"><button title="Excluir plano">×</button></form><b>{p["name"]}</b><br>{p["days"]} dias • R$ {p["price_cents"]/100:.2f}</div>' for p in pp);return page('Meus Planos',f'<div class="card"><form method="post" action="/admin/plans/create?key={key}"><input name="name" required placeholder="Nome"><input name="days" type="number" value="30"><input name="price" type="number" step="0.01" value="35.00"><select name="layout_id">{opts}</select><button>ADD PLANO</button></form></div>{cards}',key)
 @app.post('/admin/plans/create')
 def plancreate(key:str,name:str=Form(...),days:int=Form(30),price:float=Form(35),layout_id:str=Form('')):
     adm(key);c=db();ex(c,'INSERT INTO plans(id,name,days,price_cents,layout_id,created_at) VALUES(?,?,?,?,?,?)',(secrets.token_hex(8),name.strip(),max(1,days),max(0,int(round(price*100))),layout_id or None,now()));c.commit();c.close();return go('/admin/plans',key)
@@ -694,6 +694,108 @@ def resellers(key:str=''):
 @app.post('/admin/resellers/create')
 def resellercreate(key:str,name:str=Form(...),access_key:str=Form(''),max_devices:int=Form(50),brand_name:str=Form('BBL.BOXTV'),wallpaper_url:str=Form(''),logo_url:str=Form(''),message:str=Form('')):
     adm(key);c=db();ex(c,'INSERT INTO resellers(id,name,access_key,enabled,max_devices,brand_name,wallpaper_url,logo_url,message,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(secrets.token_hex(8),name.strip(),access_key.strip() or secrets.token_urlsafe(8),1,max(1,max_devices),brand_name.strip() or 'BBL.BOXTV',wallpaper_url.strip(),logo_url.strip(),message.strip(),now()));c.commit();c.close();return go('/admin/resellers',key)
+
+
+def _safe_delete(c,sql,params=()):
+    try:ex(c,sql,params)
+    except Exception:c.rollback()
+
+@app.post('/admin/device/{did}/delete')
+def delete_device(did:str,key:str):
+    adm(key);c=db()
+    try:
+      d=one(c,'SELECT activation_key FROM devices WHERE id=?',(did,))
+      if d and d.get('activation_key'):
+        _safe_delete(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE bound_device_id=?',(did,))
+      for sql in [
+        'DELETE FROM commands WHERE device_id=?',
+        'DELETE FROM notifications WHERE device_id=?',
+        'DELETE FROM logs WHERE device_id=?',
+        'DELETE FROM device_files WHERE device_id=?',
+        'DELETE FROM payments WHERE device_id=?'
+      ]:_safe_delete(c,sql,(did,))
+      _safe_delete(c,"UPDATE base2_clients SET device_id='' WHERE device_id=?",(did,))
+      ex(c,'DELETE FROM devices WHERE id=?',(did,))
+      c.commit()
+    finally:c.close()
+    return go('/',key)
+
+@app.post('/admin/apps/{aid}/delete')
+def delete_app(aid:str,key:str):
+    adm(key);c=db()
+    try:
+      a=one(c,'SELECT filename FROM apps WHERE id=?',(aid,))
+      if not a:raise HTTPException(404)
+      fn=a.get('filename') or ''
+      _safe_delete(c,'DELETE FROM base2_remote_apps WHERE app_id=?',(aid,))
+      _safe_delete(c,'DELETE FROM base2_app_chunks WHERE app_id=?',(aid,))
+      _safe_delete(c,'DELETE FROM base2_app_files WHERE app_id=?',(aid,))
+      ex(c,'DELETE FROM apps WHERE id=?',(aid,))
+      if fn:_safe_delete(c,'DELETE FROM media_files WHERE filename=?',(fn,))
+      c.commit()
+    finally:c.close()
+    return go('/admin/apps',key)
+
+@app.post('/admin/layouts/{lid}/delete')
+def delete_layout(lid:str,key:str):
+    adm(key);c=db()
+    try:
+      ex(c,'UPDATE devices SET layout_id=NULL WHERE layout_id=?',(lid,))
+      ex(c,'UPDATE plans SET layout_id=NULL WHERE layout_id=?',(lid,))
+      ex(c,'DELETE FROM layouts WHERE id=?',(lid,))
+      c.commit()
+    finally:c.close()
+    return go('/admin/layouts',key)
+
+@app.post('/admin/banners/{bid}/delete')
+def delete_banner(bid:str,key:str):
+    adm(key);c=db()
+    try:
+      b=one(c,'SELECT filename FROM banners WHERE id=?',(bid,))
+      if not b:raise HTTPException(404)
+      ex(c,'DELETE FROM banners WHERE id=?',(bid,))
+      if b.get('filename'):_safe_delete(c,'DELETE FROM media_files WHERE filename=?',(b['filename'],))
+      c.commit()
+    finally:c.close()
+    return go('/admin/banners',key)
+
+@app.post('/admin/wallpapers/{wid}/delete')
+def delete_wallpaper(wid:str,key:str):
+    adm(key);c=db()
+    try:
+      w=one(c,'SELECT filename FROM wallpapers WHERE id=?',(wid,))
+      if not w:raise HTTPException(404)
+      ex(c,'UPDATE layouts SET wallpaper_id=NULL WHERE wallpaper_id=?',(wid,))
+      _safe_delete(c,'UPDATE launcher_v55_profile SET wallpaper_id=NULL WHERE wallpaper_id=?',(wid,))
+      ex(c,'DELETE FROM wallpapers WHERE id=?',(wid,))
+      if w.get('filename'):_safe_delete(c,'DELETE FROM media_files WHERE filename=?',(w['filename'],))
+      c.commit()
+    finally:c.close()
+    return go('/admin/wallpapers',key)
+
+@app.post('/admin/logos/{lid}/delete')
+def delete_logo(lid:str,key:str):
+    adm(key);c=db()
+    try:
+      x=one(c,'SELECT filename FROM logos WHERE id=?',(lid,))
+      if not x:raise HTTPException(404)
+      ex(c,'UPDATE layouts SET logo_id=NULL WHERE logo_id=?',(lid,))
+      _safe_delete(c,'UPDATE launcher_v55_profile SET logo_id=NULL WHERE logo_id=?',(lid,))
+      ex(c,'DELETE FROM logos WHERE id=?',(lid,))
+      if x.get('filename'):_safe_delete(c,'DELETE FROM media_files WHERE filename=?',(x['filename'],))
+      c.commit()
+    finally:c.close()
+    return go('/admin/logos',key)
+
+@app.post('/admin/plans/{pid}/delete')
+def delete_plan(pid:str,key:str):
+    adm(key);c=db()
+    try:
+      ex(c,'UPDATE devices SET plan_id=NULL WHERE plan_id=?',(pid,))
+      ex(c,'DELETE FROM plans WHERE id=?',(pid,))
+      c.commit()
+    finally:c.close()
+    return go('/admin/plans',key)
 
 @app.get('/admin/commands',response_class=HTMLResponse)
 def cmdpage(key:str=''):
