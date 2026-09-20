@@ -1,9 +1,11 @@
+import os
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 import v5
 import v5_base2_apps as base2apps
 
 app = v5.app
+PUBLIC_BASE_URL=(os.getenv('PUBLIC_BASE_URL') or 'https://bbl-tvbox-manager-v2.onrender.com').rstrip('/')
 
 
 def _resolve_app(c, requested_id: str):
@@ -64,5 +66,5 @@ async def base2_apps_list(req:Request):
     for x in rows:
         aid=x['app_id']
         if aid in seen:continue
-        seen.add(aid);out.append({'queue_id':x['queue_id'],'id':aid,'name':x['name'],'package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','status':x.get('status') or 'pending','download_url':f'https://bbl-tvbox-manager-v2.onrender.com/base2/api/apps/{aid}/download','sha256':x.get('sha256') or ''})
+        seen.add(aid);out.append({'queue_id':x['queue_id'],'id':aid,'name':x['name'],'package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','status':x.get('status') or 'pending','download_url':f'{PUBLIC_BASE_URL}/base2/api/apps/{aid}/download','sha256':x.get('sha256') or ''})
     return {'ok':True,'apps':out}
