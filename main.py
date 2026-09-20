@@ -3,8 +3,8 @@ import secrets
 # panel bootstrap
 from v5_base_compat import app
 import v5
-# Ensure core tables exist before integration modules query them during import.
-v5.init()
+# Production schema already exists; do not block module import with DB migrations.
+# Set RUN_DB_INIT_ON_STARTUP=1 only when deliberately initializing a fresh database.
 import v5_reseller_portal as portal
 import v5_base2_gate
 import v5_base2_reseller_portal
