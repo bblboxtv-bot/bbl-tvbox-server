@@ -60,7 +60,7 @@ def init():
     ]:ex(c,s)
     c.commit()
     for s in [
-      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE layouts ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN wallpaper_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]',"ALTER TABLE activation_keys ADD COLUMN bound_device_id TEXT","ALTER TABLE devices ADD COLUMN hardware_key TEXT NOT NULL DEFAULT ''"
+      "ALTER TABLE devices ADD COLUMN expires_at TEXT","ALTER TABLE devices ADD COLUMN launcher_expires_at TEXT","ALTER TABLE devices ADD COLUMN layout_id TEXT","ALTER TABLE devices ADD COLUMN manufacturer TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN android_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN launcher_version TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN reseller_id TEXT","ALTER TABLE devices ADD COLUMN brand_name TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN wallpaper_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN message TEXT NOT NULL DEFAULT ''","ALTER TABLE devices ADD COLUMN block_apps_after_expiry INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN wifi_locked INTEGER NOT NULL DEFAULT 0","ALTER TABLE devices ADD COLUMN bluetooth_enabled INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN date_time_access INTEGER NOT NULL DEFAULT 1","ALTER TABLE devices ADD COLUMN plan_id TEXT","ALTER TABLE activation_keys ADD COLUMN reseller_id TEXT","ALTER TABLE layouts ADD COLUMN wallpaper_id TEXT","ALTER TABLE layouts ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE layouts ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''","ALTER TABLE layouts ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN wallpaper_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN logo_id TEXT","ALTER TABLE launcher_v55_profile ADD COLUMN banner_ids TEXT NOT NULL DEFAULT '[]'","ALTER TABLE activation_keys ADD COLUMN bound_device_id TEXT","ALTER TABLE devices ADD COLUMN hardware_key TEXT NOT NULL DEFAULT ''"
     ]:col(c,s)
     try:ex(c,'INSERT INTO activation_keys(key,enabled,label,created_at) VALUES(?,?,?,?)',(ACTIVATION_KEY,1,'Chave padrão',now()));c.commit()
     except Exception:c.rollback()
@@ -697,8 +697,13 @@ def resellercreate(key:str,name:str=Form(...),access_key:str=Form(''),max_device
 
 
 def _safe_delete(c,sql,params=()):
-    try:ex(c,sql,params)
-    except Exception:c.rollback()
+    try:
+      ex(c,'SAVEPOINT bbl_safe_delete')
+      ex(c,sql,params)
+      ex(c,'RELEASE SAVEPOINT bbl_safe_delete')
+    except Exception:
+      try:ex(c,'ROLLBACK TO SAVEPOINT bbl_safe_delete');ex(c,'RELEASE SAVEPOINT bbl_safe_delete')
+      except Exception:pass
 
 @app.post('/admin/device/{did}/delete')
 def delete_device(did:str,key:str):
