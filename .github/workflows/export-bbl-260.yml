@@ -1,0 +1,24 @@
+name: Export BBL InfinitePay APK 2.6.0
+on:
+  push:
+    paths:
+      - '.github/workflows/export-bbl-260.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK from Render
+        run: |
+          curl -fL --retry 10 --retry-delay 3 "https://bbl-launcher-build-v256b.onrender.com/BBL_BOXTV_2.5.6_ATUALIZAR_CLEAN_UNSIGNED.apk" -o "BBL_BOXTV_2.6.0_INFINITEPAY_TESTE.apk"
+          ls -lh "BBL_BOXTV_2.6.0_INFINITEPAY_TESTE.apk"
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BBL_BOXTV_2.6.0_INFINITEPAY_TESTE
+          path: BBL_BOXTV_2.6.0_INFINITEPAY_TESTE.apk
+          if-no-files-found: error
