@@ -115,9 +115,10 @@ def enroll(b:Enroll):
       c.close();raise HTTPException(403,'invalid activation key')
 
     bound=(k.get('bound_device_id') or '').strip()
+    incoming_did=(b.deviceId or b.device_id or '').strip()
     # Migração das ativações antigas: antes não existia bound_device_id.
-    # Reaproveita o dispositivo mais recente já associado ao mesmo código,
-    # evitando criar mais uma linha no painel na primeira instalação da 2.6.3.
+    # Mantém o código preso ao aparelho original; nunca transfere silenciosamente
+    # um código antigo para uma box diferente.
     if not bound:
       legacy=one(c,'SELECT * FROM devices WHERE activation_key=? ORDER BY last_seen DESC NULLS LAST, created_at DESC LIMIT 1',(k['key'],))
       if legacy:
@@ -131,7 +132,12 @@ def enroll(b:Enroll):
         ex(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE key=?',(k['key'],));c.commit();bound=''
       else:
         saved_hw=(d.get('hardware_key') or '').strip().lower()
-        if saved_hw and incoming_hardware and not secrets.compare_digest(saved_hw,incoming_hardware):
+        same_hw=bool(saved_hw and incoming_hardware and secrets.compare_digest(saved_hw,incoming_hardware))
+        same_did=bool(incoming_did and incoming_did==bound)
+        # Se o código já pertence a outro ID/aparelho, devolve conflito claro.
+        # Isto também cobre ativações antigas que ainda não tinham hardware_key,
+        # evitando devolver token de outra box e depois gerar HTTP 401 na policy.
+        if (saved_hw and incoming_hardware and not same_hw) or (not saved_hw and incoming_did and not same_did):
           c.close();raise HTTPException(409,'este código de ativação já pertence a outro aparelho')
         if incoming_hardware and not saved_hw:
           ex(c,'UPDATE devices SET hardware_key=? WHERE id=?',(incoming_hardware,bound))
@@ -142,13 +148,20 @@ def enroll(b:Enroll):
         c.close()
         return {'device_id':bound,'device_token':token,'deviceId':bound,'deviceToken':token,'token':token,'status':'ok','reused':True}
 
-    did=(b.deviceId or b.device_id or '').strip() or secrets.token_hex(5).upper()
+    did=incoming_did or secrets.token_hex(5).upper()
     d=one(c,'SELECT * FROM devices WHERE id=?',(did,))
     if d:
       token=d['token']
       saved_key=(d.get('activation_key') or '').strip()
+      saved_hw=(d.get('hardware_key') or '').strip().lower()
+      same_physical=bool(incoming_hardware and saved_hw and secrets.compare_digest(incoming_hardware,saved_hw))
       if saved_key and ''.join(ch for ch in saved_key.upper() if ch.isalnum())!=norm:
-        c.close();raise HTTPException(409,'este aparelho já está vinculado a outra ativação')
+        # Código NOVO pode substituir a ativação anterior no MESMO aparelho.
+        # Libera o vínculo da chave antiga, sem permitir que outro aparelho
+        # roube este device_id.
+        if saved_hw and incoming_hardware and not same_physical:
+          c.close();raise HTTPException(409,'este aparelho já está vinculado a outra ativação')
+        ex(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE bound_device_id=?',(did,))
       ex(c,'UPDATE devices SET activation_key=?,last_seen=?,manufacturer=?,model=?,android_version=?,launcher_version=?,hardware_key=? WHERE id=?',
          (k['key'],now(),b.manufacturer or d.get('manufacturer') or '',b.model or d.get('model') or '',b.android_version or d.get('android_version') or '',b.launcher_version or d.get('launcher_version') or '',incoming_hardware or d.get('hardware_key') or '',did))
     else:
