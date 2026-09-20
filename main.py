@@ -39,3 +39,5 @@ def _seed_reseller_admin():
 
 
 _seed_reseller_admin()
+
+import v5_payments
