@@ -1,4 +1,4 @@
-import json, secrets, hashlib
+import os, json, secrets, hashlib
 from fastapi import Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 import v5
@@ -7,6 +7,7 @@ import v5_base2_reseller_portal as reseller
 
 app = v5.app
 CHUNK_SIZE = 1024 * 1024
+FILE_STORAGE = (os.getenv('FILE_STORAGE') or 'database').strip().lower()
 
 
 def init_remote_apps():
@@ -99,17 +100,24 @@ def save_app(apk, name):
     old_ids = [x['id'] for x in v5.rows(c, 'SELECT id FROM apps WHERE package_name=?', (m.get('package_name') or '',))] if m.get('package_name') else []
     v5.ex(c, 'INSERT INTO apps(id,name,package_name,version_name,version_code,filename,size_bytes,sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
           (aid,m['name'],m['package_name'],m['version_name'],m['version_code'],fn,len(data),h,v5.now()))
-    v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
-          (aid,len(data),h,(len(data)+CHUNK_SIZE-1)//CHUNK_SIZE,0,v5.now()))
-    c.commit(); c.close()
-    try:
-        for idx, pos in enumerate(range(0, len(data), CHUNK_SIZE)):
-            _put_chunk(aid, idx, data[pos:pos+CHUNK_SIZE])
-        c = v5.db(); v5.ex(c, 'UPDATE base2_app_files SET ready=1 WHERE app_id=?', (aid,))
+    if FILE_STORAGE == 'filesystem':
+        # O arquivo já foi salvo por v5.save() no volume persistente.
+        v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
+              (aid,len(data),h,0,1,v5.now()))
         for old_id in old_ids: v5.ex(c, 'UPDATE base2_remote_apps SET app_id=? WHERE app_id=?', (aid, old_id))
         c.commit(); c.close()
-    except Exception:
-        raise HTTPException(503, 'Falha temporária ao salvar APK. Tente enviar novamente.')
+    else:
+        v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
+              (aid,len(data),h,(len(data)+CHUNK_SIZE-1)//CHUNK_SIZE,0,v5.now()))
+        c.commit(); c.close()
+        try:
+            for idx, pos in enumerate(range(0, len(data), CHUNK_SIZE)):
+                _put_chunk(aid, idx, data[pos:pos+CHUNK_SIZE])
+            c = v5.db(); v5.ex(c, 'UPDATE base2_app_files SET ready=1 WHERE app_id=?', (aid,))
+            for old_id in old_ids: v5.ex(c, 'UPDATE base2_remote_apps SET app_id=? WHERE app_id=?', (aid, old_id))
+            c.commit(); c.close()
+        except Exception:
+            raise HTTPException(503, 'Falha temporária ao salvar APK. Tente enviar novamente.')
     return aid
 
 
@@ -138,30 +146,36 @@ def replace_app_file(app_id, apk):
 
     v5.ex(c, 'DELETE FROM base2_app_chunks WHERE app_id=?', (app_id,))
     v5.ex(c, 'DELETE FROM base2_app_files WHERE app_id=?', (app_id,))
-    v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
-          (app_id, len(data), h, (len(data)+CHUNK_SIZE-1)//CHUNK_SIZE, 0, v5.now()))
-    c.commit()
-    c.close()
-
-    try:
-        for idx, pos in enumerate(range(0, len(data), CHUNK_SIZE)):
-            _put_chunk(app_id, idx, data[pos:pos+CHUNK_SIZE])
-
-        c = v5.db()
+    if FILE_STORAGE == 'filesystem':
+        v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
+              (app_id, len(data), h, 0, 1, v5.now()))
         v5.ex(c, 'UPDATE apps SET package_name=?,version_name=?,version_code=?,filename=?,size_bytes=?,sha256=? WHERE id=?',
               (m.get('package_name') or app.get('package_name') or '',
                m.get('version_name') or app.get('version_name') or '',
                m.get('version_code') or app.get('version_code') or '',
                fn, len(data), h, app_id))
-        v5.ex(c, 'UPDATE base2_app_files SET ready=1 WHERE app_id=?', (app_id,))
-        c.commit()
-        c.close()
-    except Exception:
-        c = v5.db()
-        v5.ex(c, 'UPDATE base2_app_files SET ready=0 WHERE app_id=?', (app_id,))
-        c.commit()
-        c.close()
-        raise HTTPException(503, 'Falha temporária ao salvar APK. Tente novamente.')
+        c.commit(); c.close()
+    else:
+        v5.ex(c, 'INSERT INTO base2_app_files(app_id,size_bytes,sha256,chunk_count,ready,created_at) VALUES(?,?,?,?,?,?)',
+              (app_id, len(data), h, (len(data)+CHUNK_SIZE-1)//CHUNK_SIZE, 0, v5.now()))
+        c.commit(); c.close()
+        try:
+            for idx, pos in enumerate(range(0, len(data), CHUNK_SIZE)):
+                _put_chunk(app_id, idx, data[pos:pos+CHUNK_SIZE])
+
+            c = v5.db()
+            v5.ex(c, 'UPDATE apps SET package_name=?,version_name=?,version_code=?,filename=?,size_bytes=?,sha256=? WHERE id=?',
+                  (m.get('package_name') or app.get('package_name') or '',
+                   m.get('version_name') or app.get('version_name') or '',
+                   m.get('version_code') or app.get('version_code') or '',
+                   fn, len(data), h, app_id))
+            v5.ex(c, 'UPDATE base2_app_files SET ready=1 WHERE app_id=?', (app_id,))
+            c.commit(); c.close()
+        except Exception:
+            c = v5.db()
+            v5.ex(c, 'UPDATE base2_app_files SET ready=0 WHERE app_id=?', (app_id,))
+            c.commit(); c.close()
+            raise HTTPException(503, 'Falha temporária ao salvar APK. Tente novamente.')
 
     try:
         p.unlink(missing_ok=True)
