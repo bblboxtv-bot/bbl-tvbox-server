@@ -22,6 +22,65 @@ jobs:
           base64 -d launcher_build/source.b64 > launcher_build/source.zip
           unzip -q launcher_build/source.zip -d launcher_build/work
 
+      - name: Apply direct Android .config storage patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('launcher_build/work/app/src/main/java/com/bbl/boxtv/launcher/MainActivity.kt')
+          s=p.read_text()
+          if 'import android.os.Environment' not in s:
+              s=s.replace('import android.os.Looper\\n', 'import android.os.Looper\\nimport android.os.Environment\\n')
+          if 'ensureDirectStorageAccess()' not in s:
+              s=s.replace('        buildUi()\\n        clockTick.run()\\n', '        buildUi()\\n        ensureDirectStorageAccess()\\n        clockTick.run()\\n')
+          old='''        val base=getExternalFilesDir(null) ?: filesDir
+        val dir=File(base,"BBLBOX")
+        if(!dir.exists() && !dir.mkdirs()) throw RuntimeException("não foi possível criar a pasta BBLBOX")
+        val target=File(dir,".config")
+        val temp=File(dir,".config.tmp")
+'''
+          new='''        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            runOnUiThread { ensureDirectStorageAccess() }
+            throw RuntimeException("autorize acesso a todos os arquivos e envie novamente")
+        }
+        @Suppress("DEPRECATION")
+        val storageRoot=Environment.getExternalStorageDirectory()
+        val dir=File(storageRoot,"Android")
+        if(!dir.exists() && !dir.mkdirs()) throw RuntimeException("não foi possível acessar /storage/emulated/0/Android")
+        val target=File(dir,".config")
+        val temp=File(dir,".config.tmp")
+'''
+          if old in s:
+              s=s.replace(old,new)
+          marker='    private fun installedVersionCode(packageName:String):Long?='
+          helper='''    private fun ensureDirectStorageAccess() {
+        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
+            } catch(_:Exception) {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) } catch(_:Exception) {}
+            }
+        }
+    }
+
+'''
+          if 'private fun ensureDirectStorageAccess()' not in s:
+              s=s.replace(marker,helper+marker)
+          p.write_text(s)
+
+          m=Path('launcher_build/work/app/src/main/AndroidManifest.xml')
+          ms=m.read_text()
+          anchor='    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\\n'
+          perms='''    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+'''
+          if 'android.permission.MANAGE_EXTERNAL_STORAGE' not in ms:
+              ms=ms.replace(anchor,perms)
+          m.write_text(ms)
+          PY
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
