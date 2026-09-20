@@ -260,6 +260,28 @@ def create_pix(did: str, body: PaymentCreateBody = PaymentCreateBody(), authoriz
         c.close()
 
 
+@v5.app.get('/api/payments/mercadopago/selftest')
+def mercadopago_selftest(key: str = ''):
+    expected = (os.getenv('MP_SELFTEST_KEY') or '').strip()
+    if not expected or key != expected:
+        raise HTTPException(404, 'not found')
+    test_id = secrets.token_hex(8)
+    body = {
+        'transaction_amount': 1.00,
+        'description': 'BBL.BOXTV teste tecnico Pix',
+        'payment_method_id': 'pix',
+        'external_reference': f'BBL-SELFTEST-{test_id}',
+        'payer': {'email': MP_PAYER_EMAIL}
+    }
+    if MP_NOTIFICATION_URL:
+        body['notification_url'] = MP_NOTIFICATION_URL
+    mp = _mp('POST', '/v1/payments', body, secrets.token_hex(16))
+    td = (((mp.get('point_of_interaction') or {}).get('transaction_data')) or {})
+    qr = (td.get('qr_code') or '').strip()
+    valid = qr.startswith('000201') and 'br.gov.bcb.pix' in qr.lower() and '6304' in qr
+    return {'ok': True, 'qr_valid': valid, 'status': mp.get('status') or '', 'payment_id_present': bool(mp.get('id'))}
+
+
 @v5.app.get('/api/devices/{did}/payment')
 def get_payment(did: str, authorization: Optional[str] = Header(None)):
     c, d = _auth_device(did, authorization)
