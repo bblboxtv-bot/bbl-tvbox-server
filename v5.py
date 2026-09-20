@@ -54,6 +54,7 @@ def init():
       "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')",
       "CREATE TABLE IF NOT EXISTS launcher_v55_profile(id TEXT PRIMARY KEY,app_ids TEXT NOT NULL DEFAULT '[]',device_ids TEXT NOT NULL DEFAULT '[]',updated_at TEXT)",
       "CREATE TABLE IF NOT EXISTS media_files(filename TEXT PRIMARY KEY,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,data BYTEA NOT NULL,created_at TEXT)",
+      "CREATE TABLE IF NOT EXISTS device_files(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,original_name TEXT NOT NULL DEFAULT '',size_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',data BYTEA NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS logos(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)"
     ]:ex(c,s)
     c.commit()
@@ -211,6 +212,14 @@ def commands(did:str,authorization:Optional[str]=Header(None)):
 @app.post('/api/devices/{did}/commands/{cid}/result')
 def cmdresult(did:str,cid:str,b:CmdResult,authorization:Optional[str]=Header(None)):
     c=db();authdev(c,did,authorization);ex(c,'UPDATE commands SET status=?,result=?,finished_at=? WHERE id=? AND device_id=?',(b.status,b.result,now(),cid,did));log(c,did,'command_result',f'{cid}:{b.status}:{b.result[:180]}');c.commit();c.close();return {'ok':True}
+
+@app.get('/api/devices/{did}/files/{fid}/download')
+def devicefile(did:str,fid:str,authorization:Optional[str]=Header(None)):
+    c=db();authdev(c,did,authorization);f=one(c,'SELECT original_name,size_bytes,sha256,data FROM device_files WHERE id=? AND device_id=?',(fid,did))
+    if not f:
+      c.close();raise HTTPException(404,'arquivo não encontrado')
+    data=bytes(f.get('data') or b'');c.close()
+    return Response(content=data,media_type='application/octet-stream',headers={'Content-Disposition':'attachment; filename=".config"','Content-Length':str(len(data)),'X-Content-SHA256':f.get('sha256') or ''})
 @app.get('/api/apps/{aid}/download')
 def dl(aid:str):
     c=db();a=one(c,'SELECT filename FROM apps WHERE id=?',(aid,))
@@ -281,7 +290,7 @@ def device(did:str,key:str=''):
     adm(key);c=db();d=one(c,'SELECT * FROM devices WHERE id=?',(did,));ls=rows(c,'SELECT * FROM layouts ORDER BY name');ps=rows(c,'SELECT * FROM plans ORDER BY name');c.close()
     if not d:raise HTTPException(404)
     l='<option value="">Sem layout</option>'+''.join(f'<option value="{x["id"]}" {"selected" if d.get("layout_id")==x["id"] else ""}>{x["name"]}</option>' for x in ls);p=''.join(f'<option value="{x["id"]}">{x["name"]}</option>' for x in ps)
-    b=f'''<div class="grid"><div class="card"><b>Código</b><br>{did}</div><div class="card"><b>Versão Launcher</b><br>{d.get('launcher_version') or '-'}</div><div class="card"><b>Marca/Modelo</b><br>{d.get('manufacturer') or '-'} • {d.get('model') or '-'}</div><div class="card"><b>Android</b><br>{d.get('android_version') or '-'}</div></div><div class="card"><form method="post" action="/admin/device/{did}/update?key={key}"><input name="display_name" value="{d.get('display_name') or ''}" placeholder="Nome"><input name="expires_at" value="{d.get('expires_at') or ''}" placeholder="Vencimento ISO"><select name="layout_id">{l}</select><label><input style="width:auto" type="checkbox" name="block_apps_after_expiry" value="1" {'checked' if d.get('block_apps_after_expiry',1) else ''}> Bloquear apps após vencer</label><br><label><input style="width:auto" type="checkbox" name="wifi_locked" value="1" {'checked' if d.get('wifi_locked') else ''}> Bloquear Wi-Fi sem senha</label><br><label><input style="width:auto" type="checkbox" name="bluetooth_enabled" value="1" {'checked' if d.get('bluetooth_enabled',1) else ''}> Bluetooth</label><br><button>Salvar</button></form><form method="post" action="/admin/device/{did}/toggle?key={key}"><button class="{'good' if d.get('locked') else 'danger'}">{'Desbloquear' if d.get('locked') else 'Bloquear'}</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/plan?key={key}"><select name="plan_id">{p}</select><button>Aplicar / renovar plano</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/notify?key={key}"><input name="title" placeholder="Título"><input name="message" placeholder="Mensagem"><button>Enviar notificação</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/command?key={key}"><select name="command"><option>SYNC</option><option>RELOAD</option><option>CLEAR_CACHE</option><option>OPEN_SETTINGS</option><option>REBOOT_REQUEST</option></select><input name="payload" value="{{}}"><button>Enviar comando</button></form></div>'''
+    b=f'''<div class="grid"><div class="card"><b>Código</b><br>{did}</div><div class="card"><b>Versão Launcher</b><br>{d.get('launcher_version') or '-'}</div><div class="card"><b>Marca/Modelo</b><br>{d.get('manufacturer') or '-'} • {d.get('model') or '-'}</div><div class="card"><b>Android</b><br>{d.get('android_version') or '-'}</div></div><div class="card"><form method="post" action="/admin/device/{did}/update?key={key}"><input name="display_name" value="{d.get('display_name') or ''}" placeholder="Nome"><input name="expires_at" value="{d.get('expires_at') or ''}" placeholder="Vencimento ISO"><select name="layout_id">{l}</select><label><input style="width:auto" type="checkbox" name="block_apps_after_expiry" value="1" {'checked' if d.get('block_apps_after_expiry',1) else ''}> Bloquear apps após vencer</label><br><label><input style="width:auto" type="checkbox" name="wifi_locked" value="1" {'checked' if d.get('wifi_locked') else ''}> Bloquear Wi-Fi sem senha</label><br><label><input style="width:auto" type="checkbox" name="bluetooth_enabled" value="1" {'checked' if d.get('bluetooth_enabled',1) else ''}> Bluetooth</label><br><button>Salvar</button></form><form method="post" action="/admin/device/{did}/toggle?key={key}"><button class="{'good' if d.get('locked') else 'danger'}">{'Desbloquear' if d.get('locked') else 'Bloquear'}</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/plan?key={key}"><select name="plan_id">{p}</select><button>Aplicar / renovar plano</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/notify?key={key}"><input name="title" placeholder="Título"><input name="message" placeholder="Mensagem"><button>Enviar notificação</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/command?key={key}"><select name="command"><option>SYNC</option><option>RELOAD</option><option>CLEAR_CACHE</option><option>OPEN_SETTINGS</option><option>REBOOT_REQUEST</option></select><input name="payload" value="{{}}"><button>Enviar comando</button></form></div><div class="card"><h3>Arquivo BBL (.config)</h3><div class="muted">Envia um arquivo para esta Box. Na launcher ele será salvo sempre como <b>.config</b> na pasta privada BBLBOX.</div><form enctype="multipart/form-data" method="post" action="/admin/device/{did}/config-file?key={key}"><input type="file" name="config_file" required><button>ENVIAR .CONFIG PARA ESTA BOX</button></form></div>'''
     return page('Gerenciar dispositivo/cliente',b,key)
 @app.post('/admin/device/{did}/update')
 def dupdate(did:str,key:str,display_name:str=Form(''),expires_at:str=Form(''),layout_id:str=Form(''),block_apps_after_expiry:Optional[str]=Form(None),wifi_locked:Optional[str]=Form(None),bluetooth_enabled:Optional[str]=Form(None)):
@@ -308,6 +317,22 @@ def dcmd(did:str,key:str,command:str=Form(...),payload:str=Form('{}')):
     try:json.loads(payload)
     except:raise HTTPException(400,'payload JSON inválido')
     c=db();ex(c,'INSERT INTO commands(id,device_id,command,payload,status,created_at) VALUES(?,?,?,?,?,?)',(secrets.token_hex(8),did,command.upper(),payload,'pending',now()));log(c,did,'command',command);c.commit();c.close();return go(f'/admin/device/{did}',key)
+
+@app.post('/admin/device/{did}/config-file')
+def dconfigfile(did:str,key:str,config_file:UploadFile=File(...)):
+    adm(key)
+    data=config_file.file.read(1024*1024+1)
+    if len(data)>1024*1024:raise HTTPException(413,'arquivo maior que 1 MB')
+    if not data:raise HTTPException(400,'arquivo vazio')
+    fid=secrets.token_hex(12);sha=hashlib.sha256(data).hexdigest();name=Path(config_file.filename or 'arquivo').name
+    c=db()
+    if not one(c,'SELECT id FROM devices WHERE id=?',(did,)):
+      c.close();raise HTTPException(404,'dispositivo não encontrado')
+    ex(c,'INSERT INTO device_files(id,device_id,original_name,size_bytes,sha256,data,created_at) VALUES(?,?,?,?,?,?,?)',(fid,did,name,len(data),sha,data,now()))
+    payload=json.dumps({'file_id':fid,'url':f'/api/devices/{did}/files/{fid}/download','filename':'.config','sha256':sha,'size':len(data)})
+    ex(c,'INSERT INTO commands(id,device_id,command,payload,status,created_at) VALUES(?,?,?,?,?,?)',(secrets.token_hex(8),did,'PUSH_BBL_CONFIG',payload,'pending',now()))
+    log(c,did,'config_file',f'{name} -> .config ({len(data)} bytes)');c.commit();c.close()
+    return go(f'/admin/device/{did}',key)
 
 @app.get('/admin/activation-keys',response_class=HTMLResponse)
 def keys(key:str=''):
