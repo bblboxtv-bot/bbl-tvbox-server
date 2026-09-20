@@ -487,16 +487,40 @@ def launcher_update_page(key:str=''):
       status='PUBLICADA' if u.get('published') else 'DESATIVADA'
       mandatory='OBRIGATÓRIA' if u.get('mandatory') else 'OPCIONAL'
       card=f'''<div class="card"><h3>Versão {u.get("version_name","-")} <span class="ok">{status}</span></h3><div class="muted">Código {u.get("version_code","-")} • {mandatory} • {u.get("created_at","-")}</div><div>{u.get("notes","")}</div><div class="nav"><a href="/api/launcher/download">Baixar APK</a><form method="post" action="/admin/launcher-update/toggle?key={key}" style="display:inline"><button>{'Despublicar' if u.get('published') else 'Publicar'}</button></form></div></div>'''
-    form=f'''<div class="card"><h3>Publicar nova atualização automática</h3><div class="muted">As Boxes verificam esta versão automaticamente e instalam quando o APK tiver assinatura BBL compatível.</div><form enctype="multipart/form-data" method="post" action="/admin/launcher-update/publish?key={key}"><input name="version_name" placeholder="Versão, ex: 2.6.4" required><input name="version_code" type="number" placeholder="Código da versão, ex: 266" required><textarea name="notes" placeholder="Notas da atualização"></textarea><label><input style="width:auto" type="checkbox" name="mandatory" value="1" checked> Atualização obrigatória</label><input type="file" name="apk" accept=".apk" required><button>PUBLICAR PARA TODAS AS BOXES</button></form></div>'''
+    form=f'''<div class="card"><h3>Publicar nova atualização automática</h3><div class="muted">As Boxes verificam esta versão automaticamente. O painel confere a versão e o código diretamente no APK para evitar publicação com número incorreto.</div><form enctype="multipart/form-data" method="post" action="/admin/launcher-update/publish?key={key}"><input name="version_name" placeholder="Versão, ex: 2.6.4" required><input name="version_code" type="number" placeholder="Código da versão, ex: 266" required><textarea name="notes" placeholder="Notas da atualização"></textarea><label><input style="width:auto" type="checkbox" name="mandatory" value="1" checked> Atualização obrigatória</label><input type="file" name="apk" accept=".apk" required><button>PUBLICAR PARA TODAS AS BOXES</button></form></div>'''
     return page('Atualização Automática da Launcher',form+(card or '<div class="card">Nenhuma atualização publicada.</div>'),key)
 
 @app.post('/admin/launcher-update/publish')
 def launcher_update_publish(key:str,version_name:str=Form(...),version_code:int=Form(...),notes:str=Form(''),mandatory:Optional[str]=Form(None),apk:UploadFile=File(...)):
     adm(key)
-    if version_code < 1: raise HTTPException(400,'version_code inválido')
     data=apk.file.read(20*1024*1024+1)
     if not data:raise HTTPException(400,'APK vazio')
     if len(data)>20*1024*1024:raise HTTPException(413,'APK maior que 20 MB')
+
+    # A versão publicada deve vir do APK real, nunca só dos campos digitados.
+    # Isso evita publicar, por exemplo, "2.6.4" com versionCode 264.
+    import tempfile
+    tmp_name=''
+    try:
+      with tempfile.NamedTemporaryFile(suffix='.apk',delete=False) as tf:
+        tf.write(data);tmp_name=tf.name
+      meta=apkmeta(Path(tmp_name))
+    finally:
+      if tmp_name:
+        try:Path(tmp_name).unlink(missing_ok=True)
+        except Exception:pass
+
+    actual_package=(meta.get('package_name') or '').strip()
+    actual_name=(meta.get('version_name') or '').strip()
+    try:actual_code=int(meta.get('version_code') or 0)
+    except Exception:actual_code=0
+    if actual_package!='com.bbl.boxtv.launcher':
+      raise HTTPException(400,f'APK inválido: pacote {actual_package or "não identificado"}')
+    if not actual_name or actual_code < 1:
+      raise HTTPException(400,'Não foi possível ler a versão real do APK')
+    version_name=actual_name
+    version_code=actual_code
+
     sha=hashlib.sha256(data).hexdigest()
     c=db()
     try:
