@@ -327,7 +327,10 @@ def _save_persistent_media(u,prefix,allowed,max_bytes):
     if len(data)>max_bytes:raise HTTPException(413,f'arquivo maior que {max_bytes//(1024*1024)} MB')
     fn=f'{prefix}_{secrets.token_hex(8)}{ext}'
     mime=(u.content_type or '').strip() or ('video/mp4' if ext=='.mp4' else 'image/jpeg' if ext in ('.jpg','.jpeg') else 'image/png')
-    c=db();ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,mime,len(data),data,now()));c.commit();c.close()
+    if (os.getenv('FILE_STORAGE') or 'database').strip().lower() == 'filesystem':
+        (UPLOAD_DIR/fn).write_bytes(data)
+    else:
+        c=db();ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,mime,len(data),data,now()));c.commit();c.close()
     return fn
 
 CSS='''*{box-sizing:border-box}body{margin:0;background:#081526;color:#fff;font:15px Arial}.top{height:62px;background:#0d1d33;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}.wrap{padding:18px;max-width:1500px;margin:auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}.nav a,button{background:#287ff1;color:#fff;border:0;border-radius:8px;padding:10px 14px;text-decoration:none;cursor:pointer}.card{position:relative;background:#0f2139;border:1px solid #24364d;border-radius:10px;padding:15px;margin:10px 0}.delete-x{position:absolute;top:8px;right:8px;margin:0}.delete-x button{background:#b72d3b;padding:5px 9px;border-radius:50%;font-size:16px;line-height:18px;min-width:30px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.muted{color:#9badc3}.ok{color:#24cf67}.bad{color:#ff5864}input,select,textarea{width:100%;background:#071323;color:#fff;border:1px solid #334760;border-radius:7px;padding:10px;margin:5px 0 10px}h1{margin:5px 0 0}.hero{padding:16px;background:#0d1d33;border-radius:10px}.wide{width:100%;font-size:18px}.danger{background:#d83a4d}.good{background:#24a85a}img{max-width:100%}'''
