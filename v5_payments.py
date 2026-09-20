@@ -149,7 +149,7 @@ def _payment_payload(r):
 
 
 def latest_payment_for_device(c, did):
-    return v5.one(c, 'SELECT * FROM payments WHERE device_id=? ORDER BY created_at DESC LIMIT 1', (did,))
+    return v5.one(c, "SELECT * FROM payments WHERE device_id=? AND provider='mercadopago' ORDER BY created_at DESC LIMIT 1", (did,))
 
 
 def _billing_for_device(c, d):
@@ -260,28 +260,6 @@ def create_pix(did: str, body: PaymentCreateBody = PaymentCreateBody(), authoriz
         c.close()
 
 
-@v5.app.get('/api/payments/mercadopago/selftest')
-def mercadopago_selftest(key: str = ''):
-    expected = (os.getenv('MP_SELFTEST_KEY') or '').strip()
-    if not expected or key != expected:
-        raise HTTPException(404, 'not found')
-    test_id = secrets.token_hex(8)
-    body = {
-        'transaction_amount': 1.00,
-        'description': 'BBL.BOXTV teste tecnico Pix',
-        'payment_method_id': 'pix',
-        'external_reference': f'BBL-SELFTEST-{test_id}',
-        'payer': {'email': MP_PAYER_EMAIL}
-    }
-    if MP_NOTIFICATION_URL:
-        body['notification_url'] = MP_NOTIFICATION_URL
-    mp = _mp('POST', '/v1/payments', body, secrets.token_hex(16))
-    td = (((mp.get('point_of_interaction') or {}).get('transaction_data')) or {})
-    qr = (td.get('qr_code') or '').strip()
-    valid = qr.startswith('000201') and 'br.gov.bcb.pix' in qr.lower() and '6304' in qr
-    return {'ok': True, 'qr_valid': valid, 'status': mp.get('status') or '', 'payment_id_present': bool(mp.get('id'))}
-
-
 @v5.app.get('/api/devices/{did}/payment')
 def get_payment(did: str, authorization: Optional[str] = Header(None)):
     c, d = _auth_device(did, authorization)
@@ -362,7 +340,7 @@ async def mercado_pago_webhook(req: Request):
     data_id = str((body.get('data') or {}).get('id') or req.query_params.get('data.id') or '')
     if not data_id:
         return {'ok': True, 'ignored': 'no_data_id'}
-    if not _valid_signature(req, data_id):
+    if MP_WEBHOOK_SECRET and not _valid_signature(req, data_id):
         raise HTTPException(401, 'assinatura de webhook inválida')
     mp = _mp('GET', f'/v1/payments/{data_id}')
     provider_id = str(mp.get('id') or data_id)
