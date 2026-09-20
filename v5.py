@@ -290,7 +290,7 @@ def device(did:str,key:str=''):
     adm(key);c=db();d=one(c,'SELECT * FROM devices WHERE id=?',(did,));ls=rows(c,'SELECT * FROM layouts ORDER BY name');ps=rows(c,'SELECT * FROM plans ORDER BY name');c.close()
     if not d:raise HTTPException(404)
     l='<option value="">Sem layout</option>'+''.join(f'<option value="{x["id"]}" {"selected" if d.get("layout_id")==x["id"] else ""}>{x["name"]}</option>' for x in ls);p=''.join(f'<option value="{x["id"]}">{x["name"]}</option>' for x in ps)
-    b=f'''<div class="grid"><div class="card"><b>Código</b><br>{did}</div><div class="card"><b>Versão Launcher</b><br>{d.get('launcher_version') or '-'}</div><div class="card"><b>Marca/Modelo</b><br>{d.get('manufacturer') or '-'} • {d.get('model') or '-'}</div><div class="card"><b>Android</b><br>{d.get('android_version') or '-'}</div></div><div class="card"><form method="post" action="/admin/device/{did}/update?key={key}"><input name="display_name" value="{d.get('display_name') or ''}" placeholder="Nome"><input name="expires_at" value="{d.get('expires_at') or ''}" placeholder="Vencimento ISO"><select name="layout_id">{l}</select><label><input style="width:auto" type="checkbox" name="block_apps_after_expiry" value="1" {'checked' if d.get('block_apps_after_expiry',1) else ''}> Bloquear apps após vencer</label><br><label><input style="width:auto" type="checkbox" name="wifi_locked" value="1" {'checked' if d.get('wifi_locked') else ''}> Bloquear Wi-Fi sem senha</label><br><label><input style="width:auto" type="checkbox" name="bluetooth_enabled" value="1" {'checked' if d.get('bluetooth_enabled',1) else ''}> Bluetooth</label><br><button>Salvar</button></form><form method="post" action="/admin/device/{did}/toggle?key={key}"><button class="{'good' if d.get('locked') else 'danger'}">{'Desbloquear' if d.get('locked') else 'Bloquear'}</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/plan?key={key}"><select name="plan_id">{p}</select><button>Aplicar / renovar plano</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/notify?key={key}"><input name="title" placeholder="Título"><input name="message" placeholder="Mensagem"><button>Enviar notificação</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/command?key={key}"><select name="command"><option>SYNC</option><option>RELOAD</option><option>CLEAR_CACHE</option><option>OPEN_SETTINGS</option><option>REBOOT_REQUEST</option></select><input name="payload" value="{{}}"><button>Enviar comando</button></form></div><div class="card"><h3>Arquivo BBL (.config)</h3><div class="muted">Envia um arquivo para esta Box. Na launcher ele será salvo sempre como <b>.config</b> na pasta privada BBLBOX.</div><form enctype="multipart/form-data" method="post" action="/admin/device/{did}/config-file?key={key}"><input type="file" name="config_file" required><button>ENVIAR .CONFIG PARA ESTA BOX</button></form></div>'''
+    b=f'''<div class="grid"><div class="card"><b>Código</b><br>{did}</div><div class="card"><b>Versão Launcher</b><br>{d.get('launcher_version') or '-'}</div><div class="card"><b>Marca/Modelo</b><br>{d.get('manufacturer') or '-'} • {d.get('model') or '-'}</div><div class="card"><b>Android</b><br>{d.get('android_version') or '-'}</div></div><div class="card"><form method="post" action="/admin/device/{did}/update?key={key}"><input name="display_name" value="{d.get('display_name') or ''}" placeholder="Nome"><input name="expires_at" value="{d.get('expires_at') or ''}" placeholder="Vencimento ISO"><select name="layout_id">{l}</select><label><input style="width:auto" type="checkbox" name="block_apps_after_expiry" value="1" {'checked' if d.get('block_apps_after_expiry',1) else ''}> Bloquear apps após vencer</label><br><label><input style="width:auto" type="checkbox" name="wifi_locked" value="1" {'checked' if d.get('wifi_locked') else ''}> Bloquear Wi-Fi sem senha</label><br><label><input style="width:auto" type="checkbox" name="bluetooth_enabled" value="1" {'checked' if d.get('bluetooth_enabled',1) else ''}> Bluetooth</label><br><button>Salvar</button></form><form method="post" action="/admin/device/{did}/toggle?key={key}"><button class="{'good' if d.get('locked') else 'danger'}">{'Desbloquear' if d.get('locked') else 'Bloquear'}</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/plan?key={key}"><select name="plan_id">{p}</select><button>Aplicar / renovar plano</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/notify?key={key}"><input name="title" placeholder="Título"><input name="message" placeholder="Mensagem"><button>Enviar notificação</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/command?key={key}"><select name="command"><option>SYNC</option><option>RELOAD</option><option>CLEAR_CACHE</option><option>OPEN_SETTINGS</option><option>REBOOT_REQUEST</option><option>MAKE_DEFAULT_HOME</option><option>FACTORY_RESET</option></select><input name="payload" value="{{}}"><button>Enviar comando</button></form></div><div class="card"><h3>Controle do aparelho</h3><p class="muted">Comandos administrativos da TV Box. Se estiver offline, ficam pendentes até ela conectar.</p><form method="post" action="/admin/device/{did}/make-default-home?key={key}"><button class="good">FIXAR BBL LAUNCHER COMO PRINCIPAL</button></form><form method="post" action="/admin/device/{did}/factory-reset?key={key}" onsubmit="var v=prompt('ATENÇÃO: isto APAGA TODOS OS DADOS da TV Box. Digite RESETAR para continuar:'); if(v!=='RESETAR') return false; this.confirm_reset.value=v; return confirm('ÚLTIMA CONFIRMAÇÃO: resetar a Box {did} para o modo de fábrica?');"><input type="hidden" name="confirm_reset" value=""><button class="danger">RESETAR APARELHO DE FÁBRICA</button></form><p class="muted">O reset é irreversível. Requer permissão administrativa/Device Owner na Box.</p></div><div class="card"><h3>Arquivo BBL (.config)</h3><div class="muted">Envia um arquivo para esta Box. Na launcher ele será salvo sempre como <b>.config</b> na pasta privada BBLBOX.</div><form enctype="multipart/form-data" method="post" action="/admin/device/{did}/config-file?key={key}"><input type="file" name="config_file" required><button>ENVIAR .CONFIG PARA ESTA BOX</button></form></div>'''
     return page('Gerenciar dispositivo/cliente',b,key)
 @app.post('/admin/device/{did}/update')
 def dupdate(did:str,key:str,display_name:str=Form(''),expires_at:str=Form(''),layout_id:str=Form(''),block_apps_after_expiry:Optional[str]=Form(None),wifi_locked:Optional[str]=Form(None),bluetooth_enabled:Optional[str]=Form(None)):
@@ -317,6 +317,42 @@ def dcmd(did:str,key:str,command:str=Form(...),payload:str=Form('{}')):
     try:json.loads(payload)
     except:raise HTTPException(400,'payload JSON inválido')
     c=db();ex(c,'INSERT INTO commands(id,device_id,command,payload,status,created_at) VALUES(?,?,?,?,?,?)',(secrets.token_hex(8),did,command.upper(),payload,'pending',now()));log(c,did,'command',command);c.commit();c.close();return go(f'/admin/device/{did}',key)
+
+
+@app.post('/admin/device/{did}/make-default-home')
+def dmakehome(did:str,key:str):
+    adm(key)
+    c=db()
+    try:
+      if not one(c,'SELECT id FROM devices WHERE id=?',(did,)):
+        raise HTTPException(404,'dispositivo não encontrado')
+      ex(c,"DELETE FROM commands WHERE device_id=? AND command=? AND status='pending'",(did,'MAKE_DEFAULT_HOME'))
+      ex(c,'INSERT INTO commands(id,device_id,command,payload,status,created_at) VALUES(?,?,?,?,?,?)',
+         (secrets.token_hex(8),did,'MAKE_DEFAULT_HOME','{}','pending',now()))
+      log(c,did,'command','MAKE_DEFAULT_HOME')
+      c.commit()
+    finally:
+      c.close()
+    return go(f'/admin/device/{did}',key)
+
+@app.post('/admin/device/{did}/factory-reset')
+def dfactoryreset(did:str,key:str,confirm_reset:str=Form('')):
+    adm(key)
+    if confirm_reset.strip().upper()!='RESETAR':
+      raise HTTPException(400,'confirmação inválida')
+    c=db()
+    try:
+      if not one(c,'SELECT id FROM devices WHERE id=?',(did,)):
+        raise HTTPException(404,'dispositivo não encontrado')
+      ex(c,"DELETE FROM commands WHERE device_id=? AND command=? AND status='pending'",(did,'FACTORY_RESET'))
+      payload=json.dumps({'requested_at':now(),'device_id':did,'reason':'admin_factory_reset'})
+      ex(c,'INSERT INTO commands(id,device_id,command,payload,status,created_at) VALUES(?,?,?,?,?,?)',
+         (secrets.token_hex(8),did,'FACTORY_RESET',payload,'pending',now()))
+      log(c,did,'command','FACTORY_RESET queued')
+      c.commit()
+    finally:
+      c.close()
+    return go(f'/admin/device/{did}',key)
 
 @app.post('/admin/device/{did}/config-file')
 def dconfigfile(did:str,key:str,config_file:UploadFile=File(...)):
