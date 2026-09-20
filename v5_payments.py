@@ -91,11 +91,29 @@ def _payment_payload(r):
 def latest_payment_for_device(c, did):
     return v5.one(c, 'SELECT * FROM payments WHERE device_id=? ORDER BY created_at DESC LIMIT 1', (did,))
 
+def _billing_for_device(c, d):
+    plan = None
+    if d.get('plan_id'):
+        plan = v5.one(c, 'SELECT * FROM plans WHERE id=?', (d.get('plan_id'),))
+    if plan:
+        return {
+            'plan_id': plan.get('id'),
+            'plan_name': plan.get('name') or '',
+            'price_cents': int(plan.get('price_cents') or 0),
+            'days': int(plan.get('days') or DEFAULT_DAYS)
+        }
+    return {
+        'plan_id': None,
+        'plan_name': '',
+        'price_cents': int(d.get('payment_price_cents') or DEFAULT_PRICE_CENTS),
+        'days': int(d.get('payment_days') or DEFAULT_DAYS)
+    }
+
 def payment_state_for_policy(c, d):
     p = latest_payment_for_device(c, d.get('id'))
     out = _payment_payload(p)
-    out['price_cents'] = int(d.get('payment_price_cents') or DEFAULT_PRICE_CENTS)
-    out['days'] = int(d.get('payment_days') or DEFAULT_DAYS)
+    billing = _billing_for_device(c, d)
+    out.update(billing)
     return out
 
 class PaymentCreateBody(BaseModel):
@@ -108,14 +126,17 @@ def create_pix(did: str, body: PaymentCreateBody = PaymentCreateBody(), authoriz
         current = latest_payment_for_device(c, did)
         if current and not body.force_new and (current.get('status') in ('pending','in_process')) and current.get('qr_code'):
             return _payment_payload(current)
-        amount_cents = int(d.get('payment_price_cents') or DEFAULT_PRICE_CENTS)
+        billing = _billing_for_device(c, d)
+        amount_cents = int(billing['price_cents'])
+        if amount_cents <= 0:
+            raise HTTPException(400, 'plano sem valor de cobrança')
         amount = amount_cents / 100.0
         local_id = secrets.token_hex(12)
         external_reference = f'BBL-{did}-{local_id[:12]}'[:64]
         idempotency_key = secrets.token_hex(16)
         req_body = {
             'transaction_amount': amount,
-            'description': f'BBL.BOXTV - {d.get("display_name") or did}',
+            'description': f'BBL.BOXTV - {(billing.get("plan_name") or "Mensalidade")} - {d.get("display_name") or did}',
             'payment_method_id': 'pix',
             'external_reference': external_reference,
             'payer': {'email': MP_PAYER_EMAIL}
@@ -147,8 +168,7 @@ def get_payment(did: str, authorization: Optional[str] = Header(None)):
     try:
         p = latest_payment_for_device(c, did)
         out = _payment_payload(p)
-        out['price_cents'] = int(d.get('payment_price_cents') or DEFAULT_PRICE_CENTS)
-        out['days'] = int(d.get('payment_days') or DEFAULT_DAYS)
+        out.update(_billing_for_device(c, d))
         return out
     finally:
         c.close()
@@ -194,7 +214,7 @@ async def mercado_pago_webhook(req: Request):
         v5.ex(c, 'UPDATE payments SET status=?,updated_at=?,approved_at=? WHERE id=?', (status,_now(),approved_at,p['id']))
         if status == 'approved':
             d = v5.one(c, 'SELECT * FROM devices WHERE id=?', (p['device_id'],))
-            days = int((d or {}).get('payment_days') or DEFAULT_DAYS)
+            days = int(_billing_for_device(c, d or {}).get('days') or DEFAULT_DAYS)
             base = datetime.now(timezone.utc)
             if d and d.get('expires_at'):
                 try:
