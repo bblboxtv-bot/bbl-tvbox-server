@@ -1,47 +1,28 @@
-name: Build BBL 2.6.4 Direct APK
+name: Export BBL 2.6.4 APK
 
 on:
   push:
-    branches:
-      - launcher-v256-build
+    branches: [ launcher-v256-build ]
     paths:
       - '.github/workflows/build-bbl-direct.yml'
-      - 'launcher_build/chunks/**'
   workflow_dispatch:
 
 jobs:
-  build:
+  export:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Prepare source
+      - name: Download compiled APK from BBL build service
         run: |
-          mkdir -p launcher_build/work
-          cat launcher_build/chunks/chunk_*.txt > launcher_build/source.b64
-          base64 -d launcher_build/source.b64 > launcher_build/source.zip
-          unzip -q -o launcher_build/source.zip -d launcher_build/work
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install Android packages
-        run: yes | sdkmanager --licenses >/dev/null || true; sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-      - name: Install Gradle
-        run: |
-          curl -L -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          unzip -q /tmp/gradle.zip -d /tmp
-      - name: Build APK
-        run: |
-          cd launcher_build/work
-          /tmp/gradle-8.9/bin/gradle :app:assembleRelease --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk ../../BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY.apk || cp app/build/outputs/apk/release/app-release-unsigned.apk ../../BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY.apk
-      - name: Upload APK
+          set -e
+          curl -fL --retry 5 --retry-delay 3 \
+            "https://bbl-launcher-build-v256b.onrender.com/BBL_BOXTV_2.5.6_ATUALIZAR_CLEAN_UNSIGNED.apk" \
+            -o BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY.apk
+          test -s BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY.apk
+          unzip -t BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY.apk >/dev/null
+
+      - name: Upload direct APK
         uses: actions/upload-artifact@v4
         with:
           name: BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY
           path: BBL_BOXTV_2.6.4_AUTOUPDATE_BACK_ONLY.apk
           if-no-files-found: error
-
-# trigger
