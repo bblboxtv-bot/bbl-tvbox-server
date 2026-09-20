@@ -115,6 +115,16 @@ def enroll(b:Enroll):
       c.close();raise HTTPException(403,'invalid activation key')
 
     bound=(k.get('bound_device_id') or '').strip()
+    # Migração das ativações antigas: antes não existia bound_device_id.
+    # Reaproveita o dispositivo mais recente já associado ao mesmo código,
+    # evitando criar mais uma linha no painel na primeira instalação da 2.6.3.
+    if not bound:
+      legacy=one(c,'SELECT * FROM devices WHERE activation_key=? ORDER BY last_seen DESC NULLS LAST, created_at DESC LIMIT 1',(k['key'],))
+      if legacy:
+        bound=(legacy.get('id') or '').strip()
+        if bound:
+          ex(c,'UPDATE activation_keys SET bound_device_id=? WHERE key=?',(bound,k['key']))
+          c.commit()
     if bound:
       d=one(c,'SELECT * FROM devices WHERE id=?',(bound,))
       if not d:
