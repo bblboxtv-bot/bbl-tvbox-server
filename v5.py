@@ -147,8 +147,17 @@ def enroll(b:Enroll):
     if d:
       token=d['token']
       saved_key=(d.get('activation_key') or '').strip()
-      if saved_key and ''.join(ch for ch in saved_key.upper() if ch.isalnum())!=norm:
-        c.close();raise HTTPException(409,'este aparelho já está vinculado a outra ativação')
+      saved_norm=''.join(ch for ch in saved_key.upper() if ch.isalnum()) if saved_key else ''
+      if saved_norm and saved_norm!=norm:
+        # Migração segura: a mesma box física pode trocar para um NOVO código
+        # ainda não vinculado. O código antigo é desassociado desta box.
+        old_hw=(d.get('hardware_key') or '').strip().lower()
+        if old_hw and incoming_hardware and not secrets.compare_digest(old_hw,incoming_hardware):
+          c.close();raise HTTPException(409,'este aparelho já está vinculado a outra ativação')
+        try:
+          ex(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE bound_device_id=?',(did,))
+        except Exception:
+          pass
       ex(c,'UPDATE devices SET activation_key=?,last_seen=?,manufacturer=?,model=?,android_version=?,launcher_version=?,hardware_key=? WHERE id=?',
          (k['key'],now(),b.manufacturer or d.get('manufacturer') or '',b.model or d.get('model') or '',b.android_version or d.get('android_version') or '',b.launcher_version or d.get('launcher_version') or '',incoming_hardware or d.get('hardware_key') or '',did))
     else:
