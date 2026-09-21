@@ -133,10 +133,10 @@ def enroll(b:Enroll):
     if not k:
       c.close();raise HTTPException(403,'invalid activation key')
 
+    requested_did=(b.deviceId or b.device_id or '').strip()
     bound=(k.get('bound_device_id') or '').strip()
     # Migração das ativações antigas: antes não existia bound_device_id.
-    # Reaproveita o dispositivo mais recente já associado ao mesmo código,
-    # evitando criar mais uma linha no painel na primeira instalação da 2.6.3.
+    # Reaproveita o dispositivo mais recente já associado ao mesmo código.
     if not bound:
       legacy=one(c,'SELECT * FROM devices WHERE activation_key=? ORDER BY last_seen DESC NULLS LAST, created_at DESC LIMIT 1',(k['key'],))
       if legacy:
@@ -145,6 +145,11 @@ def enroll(b:Enroll):
           ex(c,'UPDATE activation_keys SET bound_device_id=? WHERE key=?',(bound,k['key']))
           c.commit()
     if bound:
+      # Um código continua pertencendo a somente um aparelho. Antes o servidor
+      # ignorava o deviceId enviado pela launcher e devolvia o token da Box já
+      # vinculada, o que podia virar 401 logo depois. Agora o conflito é claro.
+      if requested_did and not secrets.compare_digest(bound,requested_did):
+        c.close();raise HTTPException(409,'este código de ativação já pertence a outro aparelho')
       d=one(c,'SELECT * FROM devices WHERE id=?',(bound,))
       if not d:
         ex(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE key=?',(k['key'],));c.commit();bound=''
@@ -161,13 +166,17 @@ def enroll(b:Enroll):
         c.close()
         return {'device_id':bound,'device_token':token,'deviceId':bound,'deviceToken':token,'token':token,'status':'ok','reused':True}
 
-    did=(b.deviceId or b.device_id or '').strip() or secrets.token_hex(5).upper()
+    did=requested_did or secrets.token_hex(5).upper()
     d=one(c,'SELECT * FROM devices WHERE id=?',(did,))
     if d:
       token=d['token']
       saved_key=(d.get('activation_key') or '').strip()
       if saved_key and ''.join(ch for ch in saved_key.upper() if ch.isalnum())!=norm:
-        c.close();raise HTTPException(409,'este aparelho já está vinculado a outra ativação')
+        # Troca de código na MESMA Box: libera o código anterior e vincula o
+        # novo. Isso elimina o falso 409 sem permitir duas Boxes no mesmo código.
+        ex(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE bound_device_id=?',(did,))
+        try:log(c,did,'activation_rebind',f'{saved_key} -> {k["key"]}')
+        except Exception:pass
       ex(c,'UPDATE devices SET activation_key=?,last_seen=?,manufacturer=?,model=?,android_version=?,launcher_version=?,hardware_key=? WHERE id=?',
          (k['key'],now(),b.manufacturer or d.get('manufacturer') or '',b.model or d.get('model') or '',b.android_version or d.get('android_version') or '',b.launcher_version or d.get('launcher_version') or '',incoming_hardware or d.get('hardware_key') or '',did))
     else:
