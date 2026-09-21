@@ -1,9 +1,11 @@
+import os
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 import v5
 import v5_base2_apps as base2apps
 
 app = v5.app
+PUBLIC_BASE_URL=(os.getenv('PUBLIC_BASE_URL') or 'https://bbl-tvbox-manager-v2.onrender.com').rstrip('/')
 
 
 def _resolve_app(c, requested_id: str):
@@ -43,8 +45,10 @@ def base2_download_apk(requested_id:str):
     stored,meta=_find_ready_equivalent(c,a); c.close()
     if stored and meta:
         filename=stored.get('filename') or ((stored.get('name') or 'aplicativo')+'.apk')
-        headers={'Content-Length':str(meta['size_bytes']),'Content-Disposition':f'attachment; filename="{filename}"','Cache-Control':'no-store'}
-        return StreamingResponse(_chunk_stream(stored['id'],meta['chunk_count']),media_type='application/vnd.android.package-archive',headers=headers)
+        # No VPS, chunk_count=0 significa que o APK está no volume persistente.
+        if int(meta.get('chunk_count') or 0) > 0:
+            headers={'Content-Length':str(meta['size_bytes']),'Content-Disposition':f'attachment; filename="{filename}"','Cache-Control':'no-store'}
+            return StreamingResponse(_chunk_stream(stored['id'],meta['chunk_count']),media_type='application/vnd.android.package-archive',headers=headers)
     p=v5.UPLOAD_DIR/a['filename']
     if p.exists():
         return v5.FileResponse(p,media_type='application/vnd.android.package-archive',filename=a['filename'])
@@ -62,5 +66,5 @@ async def base2_apps_list(req:Request):
     for x in rows:
         aid=x['app_id']
         if aid in seen:continue
-        seen.add(aid);out.append({'queue_id':x['queue_id'],'id':aid,'name':x['name'],'package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','status':x.get('status') or 'pending','download_url':f'https://bbl-tvbox-manager-v2.onrender.com/base2/api/apps/{aid}/download','sha256':x.get('sha256') or ''})
+        seen.add(aid);out.append({'queue_id':x['queue_id'],'id':aid,'name':x['name'],'package_name':x.get('package_name') or '','version_name':x.get('version_name') or '','version_code':x.get('version_code') or '','status':x.get('status') or 'pending','download_url':f'{PUBLIC_BASE_URL}/base2/api/apps/{aid}/download','sha256':x.get('sha256') or ''})
     return {'ok':True,'apps':out}
