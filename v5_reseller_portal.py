@@ -35,7 +35,7 @@ init_tables()
 
 _old_nav=v5.nav
 def nav(k):
-    return _old_nav(k).replace('</div>',f'<a href="/admin/reseller-accounts?key={k}">Painel Revenda</a></div>',1)
+    return _old_nav(k).replace('</div>',f'<a href="/admin/reseller-accounts?key={k}">Painel Revenda</a><a href="/revenda/unitv">Painel UniTV</a><a href="/revenda/unitv#criar">Criar clientes UniTV</a></div>',1)
 v5.nav=nav
 
 def token_from(req): return req.cookies.get('bbl_reseller_session','')
