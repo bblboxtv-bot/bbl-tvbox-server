@@ -336,7 +336,10 @@ def _save_persistent_media(u,prefix,allowed,max_bytes):
     if len(data)>max_bytes:raise HTTPException(413,f'arquivo maior que {max_bytes//(1024*1024)} MB')
     fn=f'{prefix}_{secrets.token_hex(8)}{ext}'
     mime=(u.content_type or '').strip() or ('video/mp4' if ext=='.mp4' else 'image/jpeg' if ext in ('.jpg','.jpeg') else 'image/png')
-    c=db();ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,mime,len(data),data,now()));c.commit();c.close()
+    if (os.getenv('FILE_STORAGE') or 'database').strip().lower() == 'filesystem':
+        (UPLOAD_DIR/fn).write_bytes(data)
+    else:
+        c=db();ex(c,'INSERT INTO media_files(filename,mime_type,size_bytes,data,created_at) VALUES(?,?,?,?,?)',(fn,mime,len(data),data,now()));c.commit();c.close()
     return fn
 
 CSS='''*{box-sizing:border-box}body{margin:0;background:#081526;color:#fff;font:15px Arial}.top{height:62px;background:#0d1d33;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}.wrap{padding:18px;max-width:1500px;margin:auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 22px}.nav a,button{background:#287ff1;color:#fff;border:0;border-radius:8px;padding:10px 14px;text-decoration:none;cursor:pointer}.card{position:relative;background:#0f2139;border:1px solid #24364d;border-radius:10px;padding:15px;margin:10px 0}.delete-x{position:absolute;top:8px;right:8px;margin:0}.delete-x button{background:#b72d3b;padding:5px 9px;border-radius:50%;font-size:16px;line-height:18px;min-width:30px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.muted{color:#9badc3}.ok{color:#24cf67}.bad{color:#ff5864}input,select,textarea{width:100%;background:#071323;color:#fff;border:1px solid #334760;border-radius:7px;padding:10px;margin:5px 0 10px}h1{margin:5px 0 0}.hero{padding:16px;background:#0d1d33;border-radius:10px}.wide{width:100%;font-size:18px}.danger{background:#d83a4d}.good{background:#24a85a}img{max-width:100%}'''
@@ -526,11 +529,16 @@ def launcher_update_publish(key:str,version_name:str=Form(...),version_code:int=
     if not data:raise HTTPException(400,'APK vazio')
     if len(data)>20*1024*1024:raise HTTPException(413,'APK maior que 20 MB')
     sha=hashlib.sha256(data).hexdigest()
+    update_id=secrets.token_hex(10)
+    stored_data=data
+    if (os.getenv('FILE_STORAGE') or 'database').strip().lower() == 'filesystem':
+      (UPLOAD_DIR/f'launcher_update_{update_id}.apk').write_bytes(data)
+      stored_data=b''
     c=db()
     try:
       ex(c,'UPDATE launcher_updates SET published=0 WHERE published=1')
       ex(c,'INSERT INTO launcher_updates(id,version_name,version_code,size_bytes,sha256,mandatory,published,notes,data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
-         (secrets.token_hex(10),version_name.strip(),int(version_code),len(data),sha,1 if mandatory else 0,1,notes.strip(),data,now()))
+         (update_id,version_name.strip(),int(version_code),len(data),sha,1 if mandatory else 0,1,notes.strip(),stored_data,now()))
       c.commit()
     except Exception:
       c.rollback();raise
@@ -553,11 +561,19 @@ def launcher_update_toggle(key:str):
 def launcher_update_download():
     c=db()
     try:
-      u=one(c,'SELECT version_name,data FROM launcher_updates WHERE published=1 ORDER BY version_code DESC,created_at DESC LIMIT 1')
+      u=one(c,'SELECT id,version_name,data FROM launcher_updates WHERE published=1 ORDER BY version_code DESC,created_at DESC LIMIT 1')
       if not u:raise HTTPException(404)
+      if (os.getenv('FILE_STORAGE') or 'database').strip().lower() == 'filesystem':
+        p=UPLOAD_DIR/f'launcher_update_{u["id"]}.apk'
+        if p.exists():
+          c.close()
+          return FileResponse(p,media_type='application/vnd.android.package-archive',filename=f'BBL_BOXTV_{u.get("version_name") or "update"}.apk')
       data=bytes(u.get('data') or b'')
+      if not data:raise HTTPException(404,'APK de atualização não encontrado')
       return Response(content=data,media_type='application/vnd.android.package-archive',headers={'Content-Disposition':f'attachment; filename="BBL_BOXTV_{u.get("version_name") or "update"}.apk"','Content-Length':str(len(data))})
-    finally:c.close()
+    finally:
+      try:c.close()
+      except Exception:pass
 
 @app.get('/api/devices/{did}/launcher-update')
 def launcher_update_check(did:str,current_version_code:int=0,authorization:Optional[str]=Header(None)):
