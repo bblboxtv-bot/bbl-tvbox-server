@@ -39,7 +39,7 @@ public class AgentService extends Service {
   return new JSONObject().put("status","partial").put("results",rows);
  }
  private String root(String command)throws Exception{
-  java.lang.Process p=new ProcessBuilder("su","-c",command).redirectErrorStream(true).start();long end=SystemClock.elapsedRealtime()+20000;
+  java.lang.Process p=new ProcessBuilder("/system/xbin/su","-c",command).redirectErrorStream(true).start();long end=SystemClock.elapsedRealtime()+20000;
   while(true){try{p.exitValue();break;}catch(IllegalThreadStateException e){if(SystemClock.elapsedRealtime()>end){p.destroy();throw new IOException("Root não respondeu a tempo");}Thread.sleep(80);}}
   try(InputStream in=p.getInputStream()){ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[1024];int n;while((n=in.read(b))!=-1){out.write(b,0,n);if(out.size()>16000)break;}return out.toString("UTF-8").trim();}
  }
@@ -65,7 +65,7 @@ public class AgentService extends Service {
   ActivityManager.MemoryInfo mem=new ActivityManager.MemoryInfo();((ActivityManager)getSystemService(ACTIVITY_SERVICE)).getMemoryInfo(mem);r.put("memory_free",mem.availMem);r.put("memory_total",mem.totalMem);r.put("low_memory",mem.lowMemory);
   StatFs disk=new StatFs(Environment.getDataDirectory().getAbsolutePath());r.put("storage_free",disk.getAvailableBytes());r.put("storage_total",disk.getTotalBytes());
   android.net.ConnectivityManager cm=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);NetworkInfo net=cm.getActiveNetworkInfo();r.put("network",net==null?"desconectada":net.getTypeName()+" "+net.getState());
-  try{r.put("root",root("id").contains("uid=0"));}catch(Exception e){r.put("root",false);}
+  try{String detail=root("id");r.put("root",detail.contains("uid=0"));if(!detail.contains("uid=0"))r.put("root_detail",detail.substring(0,Math.min(180,detail.length())));}catch(Exception e){r.put("root",false);r.put("root_detail",String.valueOf(e.getMessage()));}
   try{File[] zones=new File("/sys/class/thermal").listFiles();if(zones!=null)for(File zone:zones)if(zone.getName().startsWith("thermal_zone")){double t=Double.parseDouble(read(new File(zone,"temp")).trim());if(t>1000)t/=1000;if(t>0&&t<150){r.put("temperature_c",t);break;}}}catch(Exception ignored){}
   JSONArray apps=new JSONArray();PackageManager pm=getPackageManager();List<PackageInfo> list=pm.getInstalledPackages(0);for(PackageInfo p:list){if(apps.length()>=400)break;ApplicationInfo a=p.applicationInfo;if(a==null)continue;apps.put(new JSONObject().put("package",p.packageName).put("label",String.valueOf(pm.getApplicationLabel(a))).put("version",p.versionName==null?"":p.versionName).put("system",(a.flags&(ApplicationInfo.FLAG_SYSTEM|ApplicationInfo.FLAG_UPDATED_SYSTEM_APP))!=0).put("enabled",a.enabled));}r.put("apps",apps);return r;
  }

@@ -8,6 +8,16 @@ app=v5.app
 PROTECTED={'android','com.bbl.boxtv.launcher','com.bbl.boxtv.agent','com.bbl.boxtv.updateguard','com.android.systemui','com.android.settings','com.android.packageinstaller'}
 def digest(value):return hashlib.sha256(value.encode()).hexdigest()
 def norm(value):return ''.join(c for c in unicodedata.normalize('NFD',str(value).lower()) if not unicodedata.combining(c)).strip()
+def render_result(raw):
+ try:data=json.loads(raw)
+ except Exception:return html.escape(raw)
+ report=data.get('report')
+ if not report:return '<p>'+html.escape(data.get('error') or '\n'.join(x.get('package','')+': '+x.get('message','') for x in data.get('results',[])))+'</p>'
+ gb=lambda n:f'{int(n or 0)/1073741824:.2f} GB'
+ fields=[('Aparelho',report.get('model')),('Android informado',str(report.get('android'))+' • API '+str(report.get('sdk'))),('Memória livre / total',gb(report.get('memory_free'))+' / '+gb(report.get('memory_total'))),('Espaço livre / total',gb(report.get('storage_free'))+' / '+gb(report.get('storage_total'))),('Rede',report.get('network')),('Temperatura reportada',str(report.get('temperature_c','Indisponível'))+' °C'),('Root do agente','Liberado' if report.get('root') else 'Não liberado')]
+ cards='<div class="grid">'+''.join('<div class="card"><b>'+label+'</b><p>'+html.escape(str(value))+'</p></div>' for label,value in fields)+'</div>'
+ apps=''.join('<tr><td>'+html.escape(a.get('label',''))+'</td><td>'+html.escape(a.get('package',''))+'</td><td>'+('Sistema' if a.get('system') else 'Usuário')+'</td></tr>' for a in report.get('apps',[]))
+ return cards+'<p>Dados informados pelo Android. Esta análise não testa fisicamente fonte, placa ou conectores.</p><details><summary>Aplicativos e pacotes ('+str(len(report.get('apps',[])))+')</summary><table>'+apps+'</table></details>'
 def init():
  c=v5.db()
  for sql in [
@@ -129,7 +139,7 @@ def admin_agent(did:str,key:str):
  base='/admin/device/'+quote(did)+'/assistant'
  form='<form method="post" action="'+base+'?key='+quote(key)+'"><input name="text" placeholder="Diagnóstico da TV Box ou desinstale Nome do aplicativo" required><button>Executar comando</button></form>'
  pair='<form method="post" action="'+base+'/link?key='+quote(key)+'"><button>Vincular esta TV Box à BBLIA do celular</button></form>'
- results=''.join('<div class="card"><b>'+html.escape(j['operation']+' • '+j['status'])+'</b><pre style="white-space:pre-wrap">'+html.escape(j['result'])+'</pre></div>' for j in jobs)
+ results=''.join('<div class="card"><b>'+html.escape(j['operation']+' • '+j['status'])+'</b>'+render_result(j['result'])+'</div>' for j in jobs)
  return v5.page('Agente BBLIA • '+html.escape(did),'<div class="card"><h3>'+state+'</h3>'+form+pair+'</div>'+results,key)
 @app.post('/admin/device/{did}/assistant')
 def admin_command(did:str,key:str,text:str=Form(...)):
