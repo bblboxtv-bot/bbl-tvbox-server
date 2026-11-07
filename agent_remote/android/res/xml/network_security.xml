@@ -1,0 +1,1 @@
+<network-security-config><base-config cleartextTrafficPermitted="false"><trust-anchors><certificates src="system"/><certificates src="@raw/isrg_root_x1"/></trust-anchors></base-config></network-security-config>
