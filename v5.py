@@ -1,4 +1,4 @@
-import os,secrets,json,hashlib,shutil
+import os,secrets,json,hashlib,shutil,re
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -70,6 +70,7 @@ def init():
       "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,command TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'pending',created_at TEXT,finished_at TEXT,result TEXT NOT NULL DEFAULT '')",
       "CREATE TABLE IF NOT EXISTS launcher_v55_profile(id TEXT PRIMARY KEY,app_ids TEXT NOT NULL DEFAULT '[]',device_ids TEXT NOT NULL DEFAULT '[]',updated_at TEXT)",
       "CREATE TABLE IF NOT EXISTS media_files(filename TEXT PRIMARY KEY,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,data BYTEA NOT NULL,created_at TEXT)",
+      "CREATE TABLE IF NOT EXISTS config_exports(command_id TEXT PRIMARY KEY,device_id TEXT NOT NULL,data BYTEA NOT NULL)",
       "CREATE TABLE IF NOT EXISTS device_files(id TEXT PRIMARY KEY,device_id TEXT NOT NULL,original_name TEXT NOT NULL DEFAULT '',size_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',data BYTEA NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS logos(id TEXT PRIMARY KEY,name TEXT NOT NULL,filename TEXT NOT NULL,created_at TEXT)",
       "CREATE TABLE IF NOT EXISTS launcher_updates(id TEXT PRIMARY KEY,version_name TEXT NOT NULL,version_code INTEGER NOT NULL,size_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',mandatory INTEGER NOT NULL DEFAULT 1,published INTEGER NOT NULL DEFAULT 1,notes TEXT NOT NULL DEFAULT '',data BYTEA NOT NULL,created_at TEXT)"
@@ -347,8 +348,7 @@ async def upload_config_export(did: str, cid: str, request: Request, authorizati
             if get_export(c) == 'done':
                 return {'status': 'done'}
             raise HTTPException(409, 'exportação encerrada')
-        ex(c, 'INSERT INTO device_files(id,device_id,original_name,size_bytes,sha256,data,created_at) VALUES(?,?,?,?,?,?,?)',
-           (cid, did, '.config', len(data), hashlib.sha256(data).hexdigest(), bytes(data), now()))
+        ex(c, 'INSERT INTO config_exports(command_id,device_id,data) VALUES(?,?,?)', (cid, did, bytes(data)))
         c.commit()
         return {'status': 'done'}
     finally:
@@ -450,10 +450,20 @@ def device(did:str,key:str=''):
         elif export['status'] == 'pending':
             status = '<p>Aguardando uma sincronização com a launcher atualizada. Atualize esta página para conferir.</p>'
         else:
-            status = '<p>A Box informou falha ao ler o .config. Verifique se o arquivo existe na pasta BBLBOX.</p>'
-    b += f'''<div class="card"><h3>Extrair .config da TV Box</h3>{status}
-        <form method="post" action="{path}?{query}"><button>Extrair .config</button></form></div>'''
-    return page('Gerenciar dispositivo/cliente',b,key)
+            status = '<p>A Box informou falha ao ler o .config. Verifique se Android/.config existe e se a launcher tem acesso ao arquivo.</p>'
+    controls = f'''<div id="bbl-config-export">{status}
+        <form method="post" action="{path}?{query}"><button>Extrair config</button></form></div>'''
+    return page('Gerenciar dispositivo/cliente',place_config_export(b, controls),key)
+
+
+def place_config_export(body, controls):
+    existing = re.search(r'<button\b[^>]*>\s*APAGAR\s+CONFIG\s*/\s*PROPERTIES'
+                         r'\s*</button>\s*</form>', body, re.IGNORECASE)
+    if existing:
+        return body[:existing.end()] + controls + body[existing.end():]
+    return body + f'<div class="card"><h3>Extrair .config da TV Box</h3>{controls}</div>'
+
+
 @app.post('/admin/device/{did}/update')
 def dupdate(did:str,key:str,display_name:str=Form(''),expires_at:str=Form(''),layout_id:str=Form(''),block_apps_after_expiry:Optional[str]=Form(None),wifi_locked:Optional[str]=Form(None),bluetooth_enabled:Optional[str]=Form(None)):
     adm(key);c=db();ex(c,'UPDATE devices SET display_name=?,expires_at=?,layout_id=?,block_apps_after_expiry=?,wifi_locked=?,bluetooth_enabled=? WHERE id=?',(display_name.strip(),expires_at.strip() or None,layout_id or None,1 if block_apps_after_expiry else 0,1 if wifi_locked else 0,1 if bluetooth_enabled else 0,did));log(c,did,'device_update','settings');c.commit();c.close();return go(f'/admin/device/{did}',key)
@@ -538,8 +548,8 @@ def download_config_export(did: str, cid: str, key: str):
     adm(key)
     c = db()
     try:
-        export = one(c, 'SELECT f.data FROM commands q JOIN device_files f '
-                     'ON f.id=q.id AND f.device_id=q.device_id WHERE q.id=? AND q.device_id=? '
+        export = one(c, 'SELECT f.data FROM commands q JOIN config_exports f '
+                     'ON f.command_id=q.id AND f.device_id=q.device_id WHERE q.id=? AND q.device_id=? '
                      "AND q.command=? AND q.status='done'", (cid, did, 'EXPORT_BBL_CONFIG'))
     finally:
         c.close()
@@ -879,6 +889,7 @@ def delete_device(did:str,key:str):
       if d and d.get('activation_key'):
         _safe_delete(c,'UPDATE activation_keys SET bound_device_id=NULL WHERE bound_device_id=?',(did,))
       for sql in [
+        'DELETE FROM config_exports WHERE device_id=?',
         'DELETE FROM commands WHERE device_id=?',
         'DELETE FROM notifications WHERE device_id=?',
         'DELETE FROM logs WHERE device_id=?',
