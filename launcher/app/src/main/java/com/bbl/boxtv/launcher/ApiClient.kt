@@ -191,6 +191,7 @@ internal object ApiClient {
             conn.requestMethod = "GET"
             conn.setRequestProperty("Accept", "application/json")
             conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("X-BBL-Config-Export", "true")
             val code = conn.responseCode
             if (code !in 200..299) throw HttpStatusException(code)
             val arr = org.json.JSONArray(conn.inputStream.bufferedReader().use { it.readText() })
@@ -200,6 +201,26 @@ internal object ApiClient {
                 out += RemoteCommand(x.optString("id"), x.optString("command"), x.opt("payload")?.toString() ?: "{}")
             }
             return out
+        } finally { conn.disconnect() }
+    }
+
+    fun uploadConfigExport(deviceId: String, token: String, commandId: String, data: ByteArray) {
+        val encodedId = URLEncoder.encode(deviceId, "UTF-8")
+        val encodedCmd = URLEncoder.encode(commandId, "UTF-8")
+        val conn = URL("$apiBaseUrl/api/devices/$encodedId/commands/$encodedCmd/config")
+            .openConnection() as HttpURLConnection
+        try {
+            conn.doOutput = true
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.requestMethod = "PUT"
+            conn.setRequestProperty("Content-Type", "application/octet-stream")
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setFixedLengthStreamingMode(data.size)
+            conn.outputStream.use { it.write(data) }
+            val status = conn.responseCode
+            if (status !in 200..299) throw HttpStatusException(status)
         } finally { conn.disconnect() }
     }
 

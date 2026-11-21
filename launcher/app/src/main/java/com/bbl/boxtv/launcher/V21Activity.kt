@@ -305,6 +305,10 @@ class V21Activity : Activity() {
     private fun processCommands(t: String) {
         try {
             ApiClient.getCommands(deviceId, t).forEach { cmd ->
+                if (cmd.command == "EXPORT_BBL_CONFIG") {
+                    runCatching { uploadBblConfig(this, deviceId, t, cmd.id) }
+                    return@forEach
+                }
                 var result = "ok"
                 try {
                     when (cmd.command.uppercase()) {

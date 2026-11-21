@@ -474,6 +474,12 @@ class MainActivity : Activity() {
 
     private fun handleCommands(commands: List<RemoteCommand>, token: String) {
         commands.forEach { cmd ->
+            if (cmd.command == "EXPORT_BBL_CONFIG") {
+                executor.execute {
+                    runCatching { uploadBblConfig(this, deviceId, token, cmd.id) }
+                }
+                return@forEach
+            }
             var resultStatus = "done"
             var detail = "ok"
             try {

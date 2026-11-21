@@ -1,6 +1,7 @@
 import os,secrets,json,hashlib,shutil
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
+from urllib.parse import quote, urlencode
 from typing import Optional
 from fastapi import FastAPI,HTTPException,Header,Form,UploadFile,File,Request
 from fastapi.responses import HTMLResponse,RedirectResponse,FileResponse,Response
@@ -272,19 +273,93 @@ def policy(did:str,authorization:Optional[str]=Header(None)):
 def notif(did:str,authorization:Optional[str]=Header(None)):
     c=db();authdev(c,did,authorization);o=rows(c,'SELECT id,title,message,created_at FROM notifications WHERE device_id=? AND read_at IS NULL ORDER BY created_at DESC',(did,));c.close();return o
 @app.get('/api/devices/{did}/commands')
-def commands(did:str,authorization:Optional[str]=Header(None)):
-    c=db();authdev(c,did,authorization);o=rows(c,"SELECT id,command,payload,created_at FROM commands WHERE device_id=? AND status='pending' ORDER BY created_at",(did,));c.close()
+def commands(did: str, authorization: Optional[str] = Header(None), x_bbl_config_export: bool = Header(False)):
+    c = db()
+    try:
+        authdev(c, did, authorization)
+        query = "SELECT id,command,payload,created_at FROM commands WHERE device_id=? AND status='pending'"
+        if not x_bbl_config_export:
+            query += " AND command<>'EXPORT_BBL_CONFIG'"
+        o = rows(c, query + " ORDER BY created_at", (did,))
+    finally:
+        c.close()
     for r in o:
       try:r['payload']=json.loads(r.get('payload') or '{}')
       except:r['payload']={}
     return o
 @app.post('/api/devices/{did}/commands/{cid}/result')
 def cmdresult(did:str,cid:str,b:CmdResult,authorization:Optional[str]=Header(None)):
-    c=db();authdev(c,did,authorization);ex(c,'UPDATE commands SET status=?,result=?,finished_at=? WHERE id=? AND device_id=?',(b.status,b.result,now(),cid,did));log(c,did,'command_result',f'{cid}:{b.status}:{b.result[:180]}');c.commit();c.close();return {'ok':True}
+    c = db()
+    try:
+        authdev(c, did, authorization)
+        command = one(c, 'SELECT command FROM commands WHERE id=? AND device_id=?', (cid, did))
+        if command and command['command'] == 'EXPORT_BBL_CONFIG':
+            if b.status != 'error':
+                raise HTTPException(400, 'envie o arquivo pelo endpoint de exportação')
+            ex(c, "UPDATE commands SET status='error',finished_at=? "
+               "WHERE id=? AND device_id=? AND status='pending'", (now(), cid, did))
+        else:
+            ex(c, 'UPDATE commands SET status=?,result=?,finished_at=? WHERE id=? AND device_id=?',
+               (b.status,b.result,now(),cid,did))
+            log(c,did,'command_result',f'{cid}:{b.status}:{b.result[:180]}')
+        c.commit()
+        return {'ok': True}
+    finally:
+        c.close()
+
+@app.put('/api/devices/{did}/commands/{cid}/config')
+async def upload_config_export(did: str, cid: str, request: Request, authorization: Optional[str] = Header(None)):
+    def get_export(c):
+        authdev(c, did, authorization)
+        export = one(c, 'SELECT status FROM commands WHERE id=? AND device_id=? AND command=?',
+                     (cid, did, 'EXPORT_BBL_CONFIG'))
+        if not export:
+            raise HTTPException(404, 'exportação não encontrada')
+        return export['status']
+
+    c = db()
+    try:
+        status = get_export(c)
+        if status == 'done':
+            return {'status': 'done'}
+        if status != 'pending':
+            raise HTTPException(409, 'exportação encerrada')
+    finally:
+        c.close()
+
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > 1024 * 1024:
+            raise HTTPException(413, 'arquivo maior que 1 MB')
+        data.extend(chunk)
+    if not data:
+        raise HTTPException(400, 'arquivo vazio')
+
+    c = db()
+    try:
+        status = get_export(c)
+        if status == 'done':
+            return {'status': 'done'}
+        updated = ex(c, "UPDATE commands SET status='done',finished_at=? "
+                     "WHERE id=? AND device_id=? AND command=? AND status='pending'",
+                     (now(), cid, did, 'EXPORT_BBL_CONFIG'))
+        if not updated.rowcount:
+            if get_export(c) == 'done':
+                return {'status': 'done'}
+            raise HTTPException(409, 'exportação encerrada')
+        ex(c, 'INSERT INTO device_files(id,device_id,original_name,size_bytes,sha256,data,created_at) VALUES(?,?,?,?,?,?,?)',
+           (cid, did, '.config', len(data), hashlib.sha256(data).hexdigest(), bytes(data), now()))
+        c.commit()
+        return {'status': 'done'}
+    finally:
+        c.close()
+
 
 @app.get('/api/devices/{did}/files/{fid}/download')
 def devicefile(did:str,fid:str,authorization:Optional[str]=Header(None)):
-    c=db();authdev(c,did,authorization);f=one(c,'SELECT original_name,size_bytes,sha256,data FROM device_files WHERE id=? AND device_id=?',(fid,did))
+    c=db();authdev(c,did,authorization);f=one(c,'SELECT original_name,size_bytes,sha256,data FROM device_files f WHERE id=? AND device_id=? '
+          "AND NOT EXISTS (SELECT 1 FROM commands q WHERE q.id=f.id AND q.device_id=f.device_id "
+          "AND q.command='EXPORT_BBL_CONFIG')",(fid,did))
     if not f:
       c.close();raise HTTPException(404,'arquivo não encontrado')
     data=bytes(f.get('data') or b'');c.close()
@@ -360,6 +435,24 @@ def device(did:str,key:str=''):
     if not d:raise HTTPException(404)
     l='<option value="">Sem layout</option>'+''.join(f'<option value="{x["id"]}" {"selected" if d.get("layout_id")==x["id"] else ""}>{x["name"]}</option>' for x in ls);p=''.join(f'<option value="{x["id"]}">{x["name"]}</option>' for x in ps)
     b=f'''<div class="grid"><div class="card"><b>Código</b><br>{did}</div><div class="card"><b>Versão Launcher</b><br>{d.get('launcher_version') or '-'}</div><div class="card"><b>Marca/Modelo</b><br>{d.get('manufacturer') or '-'} • {d.get('model') or '-'}</div><div class="card"><b>Android</b><br>{d.get('android_version') or '-'}</div></div><div class="card"><form method="post" action="/admin/device/{did}/update?key={key}"><input name="display_name" value="{d.get('display_name') or ''}" placeholder="Nome"><input name="expires_at" value="{d.get('expires_at') or ''}" placeholder="Vencimento ISO"><select name="layout_id">{l}</select><label><input style="width:auto" type="checkbox" name="block_apps_after_expiry" value="1" {'checked' if d.get('block_apps_after_expiry',1) else ''}> Bloquear apps após vencer</label><br><label><input style="width:auto" type="checkbox" name="wifi_locked" value="1" {'checked' if d.get('wifi_locked') else ''}> Bloquear Wi-Fi sem senha</label><br><label><input style="width:auto" type="checkbox" name="bluetooth_enabled" value="1" {'checked' if d.get('bluetooth_enabled',1) else ''}> Bluetooth</label><br><button>Salvar</button></form><form method="post" action="/admin/device/{did}/toggle?key={key}"><button class="{'good' if d.get('locked') else 'danger'}">{'Desbloquear' if d.get('locked') else 'Bloquear'}</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/plan?key={key}"><select name="plan_id">{p}</select><button>Aplicar / renovar plano</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/notify?key={key}"><input name="title" placeholder="Título"><input name="message" placeholder="Mensagem"><button>Enviar notificação</button></form></div><div class="card"><form method="post" action="/admin/device/{did}/command?key={key}"><select name="command"><option>SYNC</option><option>RELOAD</option><option>CLEAR_CACHE</option><option>OPEN_SETTINGS</option><option>REBOOT_REQUEST</option><option>MAKE_DEFAULT_HOME</option><option>FACTORY_RESET</option></select><input name="payload" value="{{}}"><button>Enviar comando</button></form></div><div class="card"><h3>Controle do aparelho</h3><p class="muted">Comandos administrativos da TV Box. Se estiver offline, ficam pendentes até ela conectar.</p><form method="post" action="/admin/device/{did}/make-default-home?key={key}"><button class="good">FIXAR BBL LAUNCHER COMO PRINCIPAL</button></form><form method="post" action="/admin/device/{did}/factory-reset?key={key}" onsubmit="var v=prompt('ATENÇÃO: isto APAGA TODOS OS DADOS da TV Box. Digite RESETAR para continuar:'); if(v!=='RESETAR') return false; this.confirm_reset.value=v; return confirm('ÚLTIMA CONFIRMAÇÃO: resetar a Box {did} para o modo de fábrica?');"><input type="hidden" name="confirm_reset" value=""><button class="danger">RESETAR APARELHO DE FÁBRICA</button></form><p class="muted">O reset é irreversível. Requer permissão administrativa/Device Owner na Box.</p></div><div class="card"><h3>Arquivo BBL (.config)</h3><div class="muted">Envia um arquivo para esta Box. Na launcher ele será salvo sempre como <b>.config</b> na pasta privada BBLBOX.</div><form enctype="multipart/form-data" method="post" action="/admin/device/{did}/config-file?key={key}"><input type="file" name="config_file" required><button>ENVIAR .CONFIG PARA ESTA BOX</button></form></div>'''
+    path = f'/admin/device/{quote(did, safe="")}/config-export'
+    query = urlencode({'key': key})
+    c = db()
+    try:
+        export = one(c, 'SELECT id,status FROM commands WHERE device_id=? AND command=? '
+                     'ORDER BY created_at DESC LIMIT 1', (did, 'EXPORT_BBL_CONFIG'))
+    finally:
+        c.close()
+    status = ''
+    if export:
+        if export['status'] == 'done':
+            status = f'<p><a href="{path}/{export["id"]}?{query}">Baixar .config extraído</a></p>'
+        elif export['status'] == 'pending':
+            status = '<p>Aguardando uma sincronização com a launcher atualizada. Atualize esta página para conferir.</p>'
+        else:
+            status = '<p>A Box informou falha ao ler o .config. Verifique se o arquivo existe na pasta BBLBOX.</p>'
+    b += f'''<div class="card"><h3>Extrair .config da TV Box</h3>{status}
+        <form method="post" action="{path}?{query}"><button>Extrair .config</button></form></div>'''
     return page('Gerenciar dispositivo/cliente',b,key)
 @app.post('/admin/device/{did}/update')
 def dupdate(did:str,key:str,display_name:str=Form(''),expires_at:str=Form(''),layout_id:str=Form(''),block_apps_after_expiry:Optional[str]=Form(None),wifi_locked:Optional[str]=Form(None),bluetooth_enabled:Optional[str]=Form(None)):
@@ -422,6 +515,41 @@ def dfactoryreset(did:str,key:str,confirm_reset:str=Form('')):
     finally:
       c.close()
     return go(f'/admin/device/{did}',key)
+
+@app.post('/admin/device/{did}/config-export')
+def request_config_export(did: str, key: str):
+    adm(key)
+    c = db()
+    try:
+        if not one(c, 'SELECT id FROM devices WHERE id=?', (did,)):
+            raise HTTPException(404, 'dispositivo não encontrado')
+        ex(c, 'INSERT INTO commands(id,device_id,command,created_at) '
+           "SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM commands WHERE device_id=? "
+           "AND command=? AND status='pending')",
+           (secrets.token_hex(8), did, 'EXPORT_BBL_CONFIG', now(), did, 'EXPORT_BBL_CONFIG'))
+        c.commit()
+    finally:
+        c.close()
+    return RedirectResponse(f'/admin/device/{quote(did, safe="")}?{urlencode({"key": key})}', 303)
+
+
+@app.get('/admin/device/{did}/config-export/{cid}')
+def download_config_export(did: str, cid: str, key: str):
+    adm(key)
+    c = db()
+    try:
+        export = one(c, 'SELECT f.data FROM commands q JOIN device_files f '
+                     'ON f.id=q.id AND f.device_id=q.device_id WHERE q.id=? AND q.device_id=? '
+                     "AND q.command=? AND q.status='done'", (cid, did, 'EXPORT_BBL_CONFIG'))
+    finally:
+        c.close()
+    if not export:
+        raise HTTPException(404, 'exportação não encontrada')
+    return Response(bytes(export['data']), media_type='application/octet-stream', headers={
+        'Content-Disposition': 'attachment; filename=".config"',
+        'Cache-Control': 'no-store',
+    })
+
 
 @app.post('/admin/device/{did}/config-file')
 def dconfigfile(did:str,key:str,config_file:UploadFile=File(...)):
